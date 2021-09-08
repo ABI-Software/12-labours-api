@@ -19,9 +19,9 @@ CORS(app)
 
 
 try:
-    stateTable = StateTable(Config.DATABASE_URL)
+    statetable = StateTable(Config.DATABASE_URL)
 except AttributeError:
-    table = None
+    statetable = None
 
 @app.errorhandler(404)
 def resource_not_found(e):
