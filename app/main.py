@@ -1,12 +1,14 @@
-import boto3
+# import boto3
 import json
 import logging
 import requests
+import gspread
 
-from flask import Flask, abort, request
+from flask import Flask, abort, request, jsonify
 from flask_cors import CORS
 from flask_marshmallow import Marshmallow
 from requests.auth import HTTPBasicAuth
+from oauth2client.service_account import ServiceAccountCredentials
 
 from app.config import Config
 from app.dbtable import StateTable
@@ -17,11 +19,11 @@ app.config["ENV"] = Config.DEPLOY_ENV
 
 CORS(app)
 
-
 try:
     statetable = StateTable(Config.DATABASE_URL)
 except AttributeError:
     statetable = None
+
 
 @app.errorhandler(404)
 def resource_not_found(e):
@@ -36,6 +38,7 @@ def start_up():
 @app.route("/health")
 def health():
     return json.dumps({"status": "healthy"})
+
 
 def get_share_link(table):
     # Do not commit to database when testing
@@ -76,3 +79,24 @@ def get_share_link():
 @app.route("/state/getstate", methods=["POST"])
 def get_state():
     return get_saved_state(statetable)
+
+
+@app.route("/search", methods=['GET'])
+def search():
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
+             "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
+    credential = ServiceAccountCredentials.from_json_keyfile_name(
+        "./app/credentials.json", scope)
+    client = gspread.authorize(credential)
+    gsheet = client.open("test organ sheets").sheet1
+    data = gsheet.get_all_records()
+    return jsonify(data)
+
+
+@app.route("/search/data", methods=['GET'])
+def search_s3_data():
+    req = requests.get(
+        "https://mapcore-bucket1.s3-us-west-2.amazonaws.com/bladder/rat/rat_bladder_metadata.json")
+    data = req.content
+    print(req.content)
+    return jsonify(data)
