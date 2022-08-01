@@ -84,7 +84,7 @@ CREDENTIALS = {
     "type": SpreadSheetConfig.SHEET_TYPE,
     "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
     "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
-    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY,
+    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY.replace('\\n', '\n'),
     "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
     "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
     "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
