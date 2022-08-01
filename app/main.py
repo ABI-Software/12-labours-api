@@ -9,7 +9,7 @@ from flask_marshmallow import Marshmallow
 from requests.auth import HTTPBasicAuth
 from oauth2client.service_account import ServiceAccountCredentials
 
-from app.config import Config
+from app.config import Config, SpreadSheetConfig
 from app.dbtable import StateTable
 
 app = Flask(__name__)
@@ -80,22 +80,33 @@ def get_state():
     return get_saved_state(statetable)
 
 
+CREDENTIALS = {"type": SpreadSheetConfig.SHEET_TYPE,
+               "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
+               "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
+               "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY,
+               "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
+               "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
+               "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
+               "token_uri": SpreadSheetConfig.SHEET_TOKEN_URI,
+               "auth_provider_x509_cert_url": SpreadSheetConfig.SHEET_AUTH_PROVIDER_X509_CERT_URL,
+               "client_x509_cert_url": SpreadSheetConfig.SHEET_CLIENT_X509_CERT_URL}
+
+
 @app.route("/search", methods=['GET'])
 def search():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
              "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
-    credential = ServiceAccountCredentials.from_json_keyfile_name(
-        "./app/credentials.json", scope)
+    credential = ServiceAccountCredentials.from_json_keyfile_dict(
+        CREDENTIALS, scope)
     client = gspread.authorize(credential)
     gsheet = client.open("test organ sheets").sheet1
     data = gsheet.get_all_records()
     return jsonify(data)
 
 
-@app.route("/search/data", methods=['GET'])
-def search_s3_data():
-    req = requests.get(
-        "https://mapcore-bucket1.s3-us-west-2.amazonaws.com/bladder/rat/rat_bladder_metadata.json")
-    data = req.content
-    print(req.content)
-    return jsonify(data)
+# @app.route("/search/<filter_by>", methods=['GET'])
+# def search_s3_data():
+#     req = requests.get(
+#         "https://mapcore-bucket1.s3-us-west-2.amazonaws.com/bladder/rat/rat_bladder_metadata.json")
+#     data = req.content
+#     return data
