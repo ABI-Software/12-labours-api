@@ -80,16 +80,18 @@ def get_state():
     return get_saved_state(statetable)
 
 
-CREDENTIALS = {"type": SpreadSheetConfig.SHEET_TYPE,
-               "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
-               "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
-               "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY,
-               "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
-               "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
-               "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
-               "token_uri": SpreadSheetConfig.SHEET_TOKEN_URI,
-               "auth_provider_x509_cert_url": SpreadSheetConfig.SHEET_AUTH_PROVIDER_X509_CERT_URL,
-               "client_x509_cert_url": SpreadSheetConfig.SHEET_CLIENT_X509_CERT_URL}
+CREDENTIALS = {
+    "type": SpreadSheetConfig.SHEET_TYPE,
+    "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
+    "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
+    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY,
+    "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
+    "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
+    "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
+    "token_uri": SpreadSheetConfig.SHEET_TOKEN_URI,
+    "auth_provider_x509_cert_url": SpreadSheetConfig.SHEET_AUTH_PROVIDER_X509_CERT_URL,
+    "client_x509_cert_url": SpreadSheetConfig.SHEET_CLIENT_X509_CERT_URL
+}
 
 
 @app.route("/search", methods=['GET'])
