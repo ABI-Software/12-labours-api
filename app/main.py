@@ -1,3 +1,4 @@
+from crypt import methods
 import json
 import logging
 import requests
@@ -9,7 +10,7 @@ from flask_marshmallow import Marshmallow
 from requests.auth import HTTPBasicAuth
 from oauth2client.service_account import ServiceAccountCredentials
 
-from app.config import Config, SpreadSheetConfig
+from app.config import Config, SpreadSheetConfig, Gen3Config
 from app.dbtable import StateTable
 
 app = Flask(__name__)
@@ -32,6 +33,11 @@ def resource_not_found(e):
 @app.before_first_request
 def start_up():
     print("Initiate")
+
+
+@app.route("/")
+def flask():
+    return "This is the flask backend."
 
 
 @app.route("/health")
@@ -80,7 +86,7 @@ def get_state():
     return get_saved_state(statetable)
 
 
-CREDENTIALS = {
+SPREADSHEET_CREDENTIALS = {
     "type": SpreadSheetConfig.SHEET_TYPE,
     "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
     "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
@@ -96,19 +102,34 @@ CREDENTIALS = {
 
 @app.route("/search", methods=['GET'])
 def search():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
-             "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
+    # Connect the backend with google spreadsheet
+    scope = [
+        "https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"
+    ]
     credential = ServiceAccountCredentials.from_json_keyfile_dict(
-        CREDENTIALS, scope)
+        SPREADSHEET_CREDENTIALS, scope)
     client = gspread.authorize(credential)
     gsheet = client.open("test organ sheets").sheet1
     data = gsheet.get_all_records()
     return jsonify(data)
 
 
-# @app.route("/search/<filter_by>", methods=['GET'])
-# def search_s3_data():
-#     req = requests.get(
-#         "https://mapcore-bucket1.s3-us-west-2.amazonaws.com/bladder/rat/rat_bladder_metadata.json")
-#     data = req.content
-#     return data
+GEN3_CREDENTIALS = {
+    "api_key": Gen3Config.GEN3_API_KEY,
+    "key_id": Gen3Config.GEN3_KEY_ID
+}
+
+
+@app.route('/gen3', methods=['GET', 'POST'])
+def gen3():
+    # Connect the backend with gen3
+    token = requests.post(
+        'http://gen3.abi-ctt-ctp.cloud.edu.au/user/credentials/cdis/access_token', json=GEN3_CREDENTIALS).json()
+
+    headers = {'Authorization': 'bearer ' + token['access_token']}
+
+    query = {'query': """{project(first:0){project_id id}}"""}
+    ql = requests.post(
+        'http://gen3.abi-ctt-ctp.cloud.edu.au/api/v0/submission/graphql/', json=query, headers=headers)
+    return ql.text
