@@ -1,13 +1,9 @@
-from crypt import methods
 import json
-import logging
 import requests
 import gspread
 
 from flask import Flask, abort, request, jsonify
 from flask_cors import CORS
-from flask_marshmallow import Marshmallow
-from requests.auth import HTTPBasicAuth
 from oauth2client.service_account import ServiceAccountCredentials
 
 from app.config import Config, SpreadSheetConfig, Gen3Config
@@ -18,6 +14,27 @@ app = Flask(__name__)
 app.config["ENV"] = Config.DEPLOY_ENV
 
 CORS(app)
+
+SPREADSHEET_CREDENTIALS = {
+    "type": SpreadSheetConfig.SHEET_TYPE,
+    "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
+    "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
+    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY.replace('\\n', '\n'),
+    "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
+    "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
+    "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
+    "token_uri": SpreadSheetConfig.SHEET_TOKEN_URI,
+    "auth_provider_x509_cert_url": SpreadSheetConfig.SHEET_AUTH_PROVIDER_X509_CERT_URL,
+    "client_x509_cert_url": SpreadSheetConfig.SHEET_CLIENT_X509_CERT_URL
+}
+
+GEN3_CREDENTIALS = {
+    "api_key": Gen3Config.GEN3_API_KEY,
+    "key_id": Gen3Config.GEN3_KEY_ID
+}
+
+TOKEN = requests.post(
+    f'{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token', json=GEN3_CREDENTIALS).json()
 
 try:
     statetable = StateTable(Config.DATABASE_URL)
@@ -86,23 +103,9 @@ def get_state():
     return get_saved_state(statetable)
 
 
-SPREADSHEET_CREDENTIALS = {
-    "type": SpreadSheetConfig.SHEET_TYPE,
-    "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
-    "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
-    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY.replace('\\n', '\n'),
-    "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
-    "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
-    "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
-    "token_uri": SpreadSheetConfig.SHEET_TOKEN_URI,
-    "auth_provider_x509_cert_url": SpreadSheetConfig.SHEET_AUTH_PROVIDER_X509_CERT_URL,
-    "client_x509_cert_url": SpreadSheetConfig.SHEET_CLIENT_X509_CERT_URL
-}
-
-
 @app.route("/search", methods=['GET'])
+# Connect to the google spreadsheet and get all spreadsheet data.
 def search():
-    # Connect the backend with google spreadsheet
     scope = [
         "https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"
@@ -115,21 +118,21 @@ def search():
     return jsonify(data)
 
 
-GEN3_CREDENTIALS = {
-    "api_key": Gen3Config.GEN3_API_KEY,
-    "key_id": Gen3Config.GEN3_KEY_ID
-}
-
-
-@app.route('/gen3', methods=['GET', 'POST'])
-def gen3():
-    # Connect the backend with gen3
-    token = requests.post(
-        'http://gen3.abi-ctt-ctp.cloud.edu.au/user/credentials/cdis/access_token', json=GEN3_CREDENTIALS).json()
-
-    headers = {'Authorization': 'bearer ' + token['access_token']}
-
-    query = {'query': """{project(first:0){project_id id}}"""}
-    ql = requests.post(
-        'http://gen3.abi-ctt-ctp.cloud.edu.au/api/v0/submission/graphql/', json=query, headers=headers)
-    return ql.text
+@app.route("/project", methods=['POST'])
+# Get all projects information from Gen3 Data Commons
+def project():
+    query = {
+        "query": """
+                {project {
+                    code
+                    name
+                    project_id
+                    state
+                    }
+                }
+                """
+    }
+    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
+    return res.content
