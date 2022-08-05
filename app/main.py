@@ -103,9 +103,9 @@ def get_state():
     return get_saved_state(statetable)
 
 
-@app.route("/search", methods=['GET'])
+@app.route("/spreadsheet")
 # Connect to the google spreadsheet and get all spreadsheet data.
-def search():
+def spreadsheet():
     scope = [
         "https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"
@@ -113,24 +113,42 @@ def search():
     credential = ServiceAccountCredentials.from_json_keyfile_dict(
         SPREADSHEET_CREDENTIALS, scope)
     client = gspread.authorize(credential)
-    gsheet = client.open("test organ sheets").sheet1
+    gsheet = client.open("organ_sheets").sheet1
     data = gsheet.get_all_records()
     return jsonify(data)
 
 
-@app.route("/project", methods=['POST'])
+@app.route("/project", methods=['GET', 'POST'])
 # Get all projects information from Gen3 Data Commons
 def project():
     query = {
-        "query": """
-                {project {
-                    code
-                    name
-                    project_id
-                    state
-                    }
-                }
-                """
+        "query": """{project {code name project_id state} }"""
+    }
+    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
+    return res.content
+
+
+@app.route('/project/<project_id>/core_metadata_collection', methods=['GET', 'POST'])
+def core_metadata_collection(project_id):
+    query = {
+        "query": """{""" +
+        f"""core_metadata_collection (first:0, project_id:"{project_id}")""" +
+        """{relation project_id description creator subject format language publisher contributor coverage date rights projects{code} data_type type title submitter_id source} }"""
+    }
+    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
+    return res.content
+
+
+@app.route('/project/<project_id>/slide_image', methods=['GET', 'POST'])
+def slide_image(project_id):
+    query = {
+        "query": """{""" +
+        f"""slide_image (first:0, project_id:"{project_id}")""" +
+        """{type submitter_id md5sum file_size file_name data_type data_format data_category} }"""
     }
     headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
     res = requests.post(
