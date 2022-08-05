@@ -4,7 +4,6 @@ from sqlalchemy import Column, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base  
 from sqlalchemy.orm import sessionmaker
-import json
 import uuid
 
 #use the declarative syntax of sqlalchemy
