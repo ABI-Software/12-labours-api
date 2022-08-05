@@ -24,3 +24,9 @@ class SpreadSheetConfig(object):
     SHEET_AUTH_PROVIDER_X509_CERT_URL = os.environ.get(
         "SHEET_AUTH_PROVIDER_X509_CERT_URL")
     SHEET_CLIENT_X509_CERT_URL = os.environ.get("SHEET_CLIENT_X509_CERT_URL")
+
+
+class Gen3Config(object):
+    GEN3_ENDPOINT_URL = os.environ.get("GEN3_ENDPOINT_URL")
+    GEN3_API_KEY = os.environ.get("GEN3_API_KEY")
+    GEN3_KEY_ID = os.environ.get("GEN3_KEY_ID")

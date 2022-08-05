@@ -1,15 +1,12 @@
 import json
-import logging
 import requests
 import gspread
 
 from flask import Flask, abort, request, jsonify
 from flask_cors import CORS
-from flask_marshmallow import Marshmallow
-from requests.auth import HTTPBasicAuth
 from oauth2client.service_account import ServiceAccountCredentials
 
-from app.config import Config, SpreadSheetConfig
+from app.config import Config, SpreadSheetConfig, Gen3Config
 from app.dbtable import StateTable
 
 app = Flask(__name__)
@@ -17,6 +14,27 @@ app = Flask(__name__)
 app.config["ENV"] = Config.DEPLOY_ENV
 
 CORS(app)
+
+SPREADSHEET_CREDENTIALS = {
+    "type": SpreadSheetConfig.SHEET_TYPE,
+    "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
+    "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
+    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY.replace('\\n', '\n'),
+    "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
+    "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
+    "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
+    "token_uri": SpreadSheetConfig.SHEET_TOKEN_URI,
+    "auth_provider_x509_cert_url": SpreadSheetConfig.SHEET_AUTH_PROVIDER_X509_CERT_URL,
+    "client_x509_cert_url": SpreadSheetConfig.SHEET_CLIENT_X509_CERT_URL
+}
+
+GEN3_CREDENTIALS = {
+    "api_key": Gen3Config.GEN3_API_KEY,
+    "key_id": Gen3Config.GEN3_KEY_ID
+}
+
+TOKEN = requests.post(
+    f'{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token', json=GEN3_CREDENTIALS).json()
 
 try:
     statetable = StateTable(Config.DATABASE_URL)
@@ -32,6 +50,11 @@ def resource_not_found(e):
 @app.before_first_request
 def start_up():
     print("Initiate")
+
+
+@app.route("/")
+def flask():
+    return "This is the flask backend."
 
 
 @app.route("/health")
@@ -80,35 +103,54 @@ def get_state():
     return get_saved_state(statetable)
 
 
-CREDENTIALS = {
-    "type": SpreadSheetConfig.SHEET_TYPE,
-    "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
-    "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
-    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY.replace('\\n', '\n'),
-    "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
-    "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
-    "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
-    "token_uri": SpreadSheetConfig.SHEET_TOKEN_URI,
-    "auth_provider_x509_cert_url": SpreadSheetConfig.SHEET_AUTH_PROVIDER_X509_CERT_URL,
-    "client_x509_cert_url": SpreadSheetConfig.SHEET_CLIENT_X509_CERT_URL
-}
-
-
-@app.route("/search", methods=['GET'])
-def search():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
-             "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
+@app.route("/spreadsheet")
+# Connect to the google spreadsheet and get all spreadsheet data.
+def spreadsheet():
+    scope = [
+        "https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"
+    ]
     credential = ServiceAccountCredentials.from_json_keyfile_dict(
-        CREDENTIALS, scope)
+        SPREADSHEET_CREDENTIALS, scope)
     client = gspread.authorize(credential)
-    gsheet = client.open("test organ sheets").sheet1
+    gsheet = client.open("organ_sheets").sheet1
     data = gsheet.get_all_records()
     return jsonify(data)
 
 
-# @app.route("/search/<filter_by>", methods=['GET'])
-# def search_s3_data():
-#     req = requests.get(
-#         "https://mapcore-bucket1.s3-us-west-2.amazonaws.com/bladder/rat/rat_bladder_metadata.json")
-#     data = req.content
-#     return data
+@app.route("/project", methods=['GET', 'POST'])
+# Get all projects information from Gen3 Data Commons
+def project():
+    query = {
+        "query": """{project {code name project_id state} }"""
+    }
+    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
+    return res.content
+
+
+@app.route('/project/<project_id>/core_metadata_collection', methods=['GET', 'POST'])
+def core_metadata_collection(project_id):
+    query = {
+        "query": """{""" +
+        f"""core_metadata_collection (first:0, project_id:"{project_id}")""" +
+        """{relation project_id description creator subject format language publisher contributor coverage date rights projects{code} data_type type title submitter_id source} }"""
+    }
+    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
+    return res.content
+
+
+@app.route('/project/<project_id>/slide_image', methods=['GET', 'POST'])
+def slide_image(project_id):
+    query = {
+        "query": """{""" +
+        f"""slide_image (first:0, project_id:"{project_id}")""" +
+        """{type submitter_id md5sum file_size file_name data_type data_format data_category} }"""
+    }
+    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
+    return res.content
