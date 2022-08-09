@@ -35,6 +35,7 @@ GEN3_CREDENTIALS = {
 
 TOKEN = requests.post(
     f'{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token', json=GEN3_CREDENTIALS).json()
+HEADER = {'Authorization': 'bearer ' + TOKEN['access_token']}
 
 try:
     statetable = StateTable(Config.DATABASE_URL)
@@ -118,39 +119,72 @@ def spreadsheet():
     return jsonify(data)
 
 
-@app.route("/project", methods=['GET', 'POST'])
+@app.route("/dictionary", methods=['GET', 'POST'])
+# Get all dictionary node from Gen3 Data Commons
+def dictionary():
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/_dictionary', headers=HEADER)
+
+    json_data = json.loads(res.content)
+    dictionary_list = []
+    for ele in json_data['links'][2:30]:
+        dictionary_list.append(ele.replace(
+            "/v0/submission/_dictionary/", ""))
+        # dictionary_list.append(ele.replace(
+        #     "/v0/submission/_dictionary/", "").replace("_", " ").title())
+    new_json_data = {"dictionary": dictionary_list}
+    return new_json_data
+
+
+@app.route("/program", methods=['GET', 'POST'])
+# Get the program information from Gen3 Data Commons
+def program():
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/', headers=HEADER)
+
+    json_data = json.loads(res.content)
+    program_list = []
+    for ele in json_data['links']:
+        program_list.append(ele.replace(
+            "/v0/submission/", ""))
+    new_json_data = {'program': program_list}
+    return new_json_data
+
+
+@app.route("/<program>/project", methods=['GET', 'POST'])
 # Get all projects information from Gen3 Data Commons
-def project():
-    query = {
-        "query": """{project {code name project_id state} }"""
-    }
-    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
-    res = requests.post(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
+def project(program):
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}', headers=HEADER)
+
+    json_data = json.loads(res.content)
+    project_list = []
+    for ele in json_data['links']:
+        project_list.append(ele.replace(
+            f"/v0/submission/{program}/", ""))
+    new_json_data = {'project': project_list}
+    return new_json_data
+
+
+@app.route('/nodes/<node_type>', methods=['GET', 'POST'])
+# Exports all records in a dictionary node
+def export_node(node_type):
+    post_data = request.get_json()
+    program = post_data.get('program')
+    project = post_data.get('project')
+    format = post_data.get('format')
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?node_label={node_type}&format={format}', headers=HEADER)
     return res.content
 
 
-@app.route('/project/<project_id>/core_metadata_collection', methods=['GET', 'POST'])
-def core_metadata_collection(project_id):
-    query = {
-        "query": """{""" +
-        f"""core_metadata_collection (first:0, project_id:"{project_id}")""" +
-        """{relation project_id description creator subject format language publisher contributor coverage date rights projects{code} data_type type title submitter_id source} }"""
-    }
-    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
-    res = requests.post(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
-    return res.content
-
-
-@app.route('/project/<project_id>/slide_image', methods=['GET', 'POST'])
-def slide_image(project_id):
-    query = {
-        "query": """{""" +
-        f"""slide_image (first:0, project_id:"{project_id}")""" +
-        """{type submitter_id md5sum file_size file_name data_type data_format data_category} }"""
-    }
-    headers = {'Authorization': 'bearer ' + TOKEN['access_token']}
-    res = requests.post(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=headers)
+@app.route('/records/<uuid>', methods=['GET', 'POST'])
+# Exports one or more records, use comma to separate the ids (e.g. ids=uuid1,uuid2,uuid3)
+def export_record(uuid):
+    post_data = request.get_json()
+    program = post_data.get('program')
+    project = post_data.get('project')
+    format = post_data.get('format')
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}', headers=HEADER)
     return res.content
