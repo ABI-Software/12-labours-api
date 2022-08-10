@@ -179,7 +179,8 @@ def export_node(node_type):
 
 
 @app.route('/records/<uuid>', methods=['GET', 'POST'])
-# Exports one or more records, use comma to separate the ids (e.g. ids=uuid1,uuid2,uuid3)
+# Exports one or more records, use comma to separate the uuids
+# e.g. uuid1,uuid2,uuid3
 def export_record(uuid):
     post_data = request.get_json()
     program = post_data.get('program')
@@ -187,4 +188,28 @@ def export_record(uuid):
     format = post_data.get('format')
     res = requests.get(
         f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}', headers=HEADER)
+    return res.content
+
+
+@app.route('/graphql', methods=['GET', 'POST'])
+def graphql_filter():
+    post_data = request.get_json()
+    node_type = post_data.get('node_type')
+    # Condition post format should looks like
+    # 'project_id: ["demo1-jenkins", ...], tissue_type: ["Contrived", "Normal", ...], ...'
+    condition = post_data.get('condition')
+    # Field post format should looks like
+    # "submitter_id tissue_type tumor_code ..."
+    field = post_data.get('field')
+    query = {
+        "query":
+        """{""" +
+        f"""{node_type} (first:0, {condition})""" +
+        """{""" +
+        f"""{field}""" +
+        """}""" +
+        """}"""
+    }
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=HEADER)
     return res.content
