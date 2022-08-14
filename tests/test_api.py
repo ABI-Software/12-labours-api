@@ -3,13 +3,6 @@ import requests
 from app.config import Gen3Config
 
 API_URL = 'http://localhost:8080'
-GEN3_CREDENTIALS = {
-    "api_key": Gen3Config.GEN3_API_KEY,
-    "key_id": Gen3Config.GEN3_KEY_ID
-}
-TOKEN = requests.post(
-    f'{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token', json=GEN3_CREDENTIALS).json()
-HEADER = {'Authorization': 'bearer ' + TOKEN['access_token']}
 
 
 DICT_URL = f"{API_URL}/dictionary"
@@ -50,21 +43,39 @@ def test_get_project():
     assert res["project"] == ["d1p1", "jenkins"]
 
 
-PROJ_NAME = "jenkins"
-FORM_TYPE = "json"
-NODE_NAME = "sample"
-NODE_URL = f"{API_URL}/nodes/{NODE_NAME}"
+NODE_TYPE = "sample"
+NODE_URL = f"{API_URL}/nodes/{NODE_TYPE}"
 
 
-def test_get_project():
+def test_get_all_node_records():
     payload = {
-        "program": PROG_NAME,
-        "project": PROJ_NAME,
-        "format": FORM_TYPE,
+        "program": "demo1",
+        "project": "jenkins",
+        "format": "json",
     }
-    response = requests.post(NODE_URL, payload, headers=HEADER)
-    # res = json.loads(response.content)
+    response = requests.post(NODE_URL, data=json.dumps(payload), headers={
+                             "Content-Type": "application/json"})
+    res = json.loads(response.content)
     assert response.status_code == 200
-    # assert type(response.content) is bytes
-    # assert len(res['dictionary']) == 2
-    # assert res["project"] == ["d1p1", "jenkins"]
+    assert len(res['data']) == 10
+    assert res["data"][0]["id"] == "433226d6-348f-426d-a47d-750edd59cb51"
+
+
+UUID = "433226d6-348f-426d-a47d-750edd59cb51"
+RECORD_URL = f"{API_URL}/records/{UUID}"
+
+
+def test_get_exact_node_record():
+    payload = {
+        "program": "demo1",
+        "project": "jenkins",
+        "format": "json",
+    }
+    response = requests.post(RECORD_URL, data=json.dumps(payload), headers={
+                             "Content-Type": "application/json"})
+    res = json.loads(response.content)
+    assert response.status_code == 200
+    assert len(res) == 1
+    assert res[0]["sample_type"] == "Primary Tumor"
+    assert res[0]["preservation_method"] == "FFPE"
+    assert res[0]["tissue_type"] == "Contrived"

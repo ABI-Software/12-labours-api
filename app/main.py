@@ -119,7 +119,7 @@ def spreadsheet():
     return jsonify(data)
 
 
-@app.route("/dictionary", methods=['GET', 'POST'])
+@app.route("/dictionary", methods=['GET'])
 # Get all dictionary node from Gen3 Data Commons
 def dictionary():
     res = requests.get(
@@ -136,7 +136,7 @@ def dictionary():
     return new_json_data
 
 
-@app.route("/program", methods=['GET', 'POST'])
+@app.route("/program", methods=['GET'])
 # Get the program information from Gen3 Data Commons
 def program():
     res = requests.get(
@@ -151,7 +151,7 @@ def program():
     return new_json_data
 
 
-@app.route("/<program>/project", methods=['GET', 'POST'])
+@app.route("/<program>/project", methods=['GET'])
 # Get all projects information from Gen3 Data Commons
 def project(program):
     res = requests.get(
@@ -166,7 +166,7 @@ def project(program):
     return new_json_data
 
 
-@app.route('/nodes/<node_type>', methods=['GET', 'POST'])
+@app.route('/nodes/<node_type>', methods=['POST'])
 # Exports all records in a dictionary node
 def export_node(node_type):
     post_data = request.get_json()
@@ -178,7 +178,7 @@ def export_node(node_type):
     return res.content
 
 
-@app.route('/records/<uuid>', methods=['GET', 'POST'])
+@app.route('/records/<uuid>', methods=['POST'])
 # Exports one or more records, use comma to separate the ids (e.g. ids=uuid1,uuid2,uuid3)
 def export_record(uuid):
     post_data = request.get_json()
