@@ -2,7 +2,7 @@ import json
 import requests
 import gspread
 
-from flask import Flask, abort, request, jsonify
+from flask import Flask, abort, request, jsonify, Response
 from flask_cors import CORS
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -215,3 +215,18 @@ def graphql_filter():
     res = requests.post(
         f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=HEADER)
     return res.content
+
+
+@app.route('/<program>/<project>/<uuid>/<format>/download', methods=['GET', 'POST'])
+def download_file(program, project, uuid, format):
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}', headers=HEADER)
+    if format == 'json':
+        return Response(res.content,
+                        mimetype="application/json",
+                        headers={"Content-Disposition":
+                                 f"attachment;filename={uuid}.json"})
+    else:
+        return Response(res.content,
+                        mimetype="text/csv",
+                        headers={"Content-Disposition":
