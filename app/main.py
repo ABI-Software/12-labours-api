@@ -134,7 +134,7 @@ def program():
     return new_json_data
 
 
-@app.route("/<program>/project", methods=['GET', 'POST'])
+@app.route("/<program>/project", methods=['GET'])
 # Get all projects information from Gen3 Data Commons
 def project(program):
     res = requests.get(
@@ -176,6 +176,7 @@ def export_node(node_type):
     res = requests.get(
         f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?node_label={node_type}&format={format}', headers=HEADER)
     return res.content
+
 
 
 @app.route('/records/<uuid>', methods=['GET', 'POST'])
