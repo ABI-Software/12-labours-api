@@ -198,9 +198,9 @@ def download_file(program, project, uuid, format):
         return Response(res.content,
                         mimetype="application/json",
                         headers={"Content-Disposition":
-                                 f"attachment;filename=test.json"})
+                                 f"attachment;filename={uuid}.json"})
     else:
         return Response(res.content,
                         mimetype="text/csv",
                         headers={"Content-Disposition":
-                                 f"attachment;filename=test.csv"})
+                                 f"attachment;filename={uuid}.csv"})
