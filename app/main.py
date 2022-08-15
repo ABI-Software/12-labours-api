@@ -178,7 +178,6 @@ def export_node(node_type):
     return res.content
 
 
-
 @app.route('/records/<uuid>', methods=['GET', 'POST'])
 # Exports one or more records, use comma to separate the uuids
 # e.g. uuid1,uuid2,uuid3
@@ -230,3 +229,4 @@ def download_file(program, project, uuid, format):
         return Response(res.content,
                         mimetype="text/csv",
                         headers={"Content-Disposition":
+                                 f"attachment;filename={uuid}.csv"})
