@@ -119,6 +119,36 @@ def spreadsheet():
     return jsonify(data)
 
 
+@app.route("/program", methods=['GET', 'POST'])
+# Get the program information from Gen3 Data Commons
+def program():
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/', headers=HEADER)
+
+    json_data = json.loads(res.content)
+    program_list = []
+    for ele in json_data['links']:
+        program_list.append(ele.replace(
+            "/v0/submission/", ""))
+    new_json_data = {'program': program_list}
+    return new_json_data
+
+
+@app.route("/<program>/project", methods=['GET'])
+# Get all projects information from Gen3 Data Commons
+def project(program):
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}', headers=HEADER)
+
+    json_data = json.loads(res.content)
+    project_list = []
+    for ele in json_data['links']:
+        project_list.append(ele.replace(
+            f"/v0/submission/{program}/", ""))
+    new_json_data = {'project': project_list}
+    return new_json_data
+
+
 @app.route("/dictionary", methods=['GET', 'POST'])
 # Get all dictionary node from Gen3 Data Commons
 def dictionary():
@@ -136,36 +166,6 @@ def dictionary():
     return new_json_data
 
 
-@app.route("/program", methods=['GET', 'POST'])
-# Get the program information from Gen3 Data Commons
-def program():
-    res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/', headers=HEADER)
-
-    json_data = json.loads(res.content)
-    program_list = []
-    for ele in json_data['links']:
-        program_list.append(ele.replace(
-            "/v0/submission/", ""))
-    new_json_data = {'program': program_list}
-    return new_json_data
-
-
-@app.route("/<program>/project", methods=['GET', 'POST'])
-# Get all projects information from Gen3 Data Commons
-def project(program):
-    res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}', headers=HEADER)
-
-    json_data = json.loads(res.content)
-    project_list = []
-    for ele in json_data['links']:
-        project_list.append(ele.replace(
-            f"/v0/submission/{program}/", ""))
-    new_json_data = {'project': project_list}
-    return new_json_data
-
-
 @app.route('/nodes/<node_type>', methods=['GET', 'POST'])
 # Exports all records in a dictionary node
 def export_node(node_type):
@@ -178,8 +178,10 @@ def export_node(node_type):
     return res.content
 
 
+
 @app.route('/records/<uuid>', methods=['GET', 'POST'])
-# Exports one or more records, use comma to separate the ids (e.g. ids=uuid1,uuid2,uuid3)
+# Exports one or more records, use comma to separate the uuids
+# e.g. uuid1,uuid2,uuid3
 def export_record(uuid):
     post_data = request.get_json()
     program = post_data.get('program')
@@ -187,6 +189,31 @@ def export_record(uuid):
     format = post_data.get('format')
     res = requests.get(
         f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}', headers=HEADER)
+    return res.content
+
+
+@app.route('/graphql', methods=['GET', 'POST'])
+# Only used for filtering the files in a specific node for now
+def graphql_filter():
+    post_data = request.get_json()
+    node_type = post_data.get('node_type')
+    # Condition post format should looks like
+    # 'project_id: ["demo1-jenkins", ...], tissue_type: ["Contrived", "Normal", ...], ...'
+    condition = post_data.get('condition')
+    # Field post format should looks like
+    # "submitter_id tissue_type tumor_code ..."
+    field = post_data.get('field')
+    query = {
+        "query":
+        """{""" +
+        f"""{node_type}{condition}""" +
+        """{""" +
+        f"""{field}""" +
+        """}""" +
+        """}"""
+    }
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=HEADER)
     return res.content
 
 
@@ -203,4 +230,3 @@ def download_file(program, project, uuid, format):
         return Response(res.content,
                         mimetype="text/csv",
                         headers={"Content-Disposition":
-                                 f"attachment;filename={uuid}.csv"})
