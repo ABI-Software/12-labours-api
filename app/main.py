@@ -119,24 +119,7 @@ def spreadsheet():
     return jsonify(data)
 
 
-@app.route("/dictionary", methods=['GET'])
-# Get all dictionary node from Gen3 Data Commons
-def dictionary():
-    res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/_dictionary', headers=HEADER)
-
-    json_data = json.loads(res.content)
-    dictionary_list = []
-    for ele in json_data['links'][2:30]:
-        dictionary_list.append(ele.replace(
-            "/v0/submission/_dictionary/", ""))
-        # dictionary_list.append(ele.replace(
-        #     "/v0/submission/_dictionary/", "").replace("_", " ").title())
-    new_json_data = {"dictionary": dictionary_list}
-    return new_json_data
-
-
-@app.route("/program", methods=['GET'])
+@app.route("/program", methods=['GET', 'POST'])
 # Get the program information from Gen3 Data Commons
 def program():
     res = requests.get(
@@ -166,7 +149,24 @@ def project(program):
     return new_json_data
 
 
-@app.route('/nodes/<node_type>', methods=['POST'])
+@app.route("/dictionary", methods=['GET', 'POST'])
+# Get all dictionary node from Gen3 Data Commons
+def dictionary():
+    res = requests.get(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/_dictionary', headers=HEADER)
+
+    json_data = json.loads(res.content)
+    dictionary_list = []
+    for ele in json_data['links'][2:30]:
+        dictionary_list.append(ele.replace(
+            "/v0/submission/_dictionary/", ""))
+        # dictionary_list.append(ele.replace(
+        #     "/v0/submission/_dictionary/", "").replace("_", " ").title())
+    new_json_data = {"dictionary": dictionary_list}
+    return new_json_data
+
+
+@app.route('/nodes/<node_type>', methods=['GET', 'POST'])
 # Exports all records in a dictionary node
 def export_node(node_type):
     post_data = request.get_json()
@@ -178,8 +178,10 @@ def export_node(node_type):
     return res.content
 
 
-@app.route('/records/<uuid>', methods=['POST'])
-# Exports one or more records, use comma to separate the ids (e.g. ids=uuid1,uuid2,uuid3)
+
+@app.route('/records/<uuid>', methods=['GET', 'POST'])
+# Exports one or more records, use comma to separate the uuids
+# e.g. uuid1,uuid2,uuid3
 def export_record(uuid):
     post_data = request.get_json()
     program = post_data.get('program')
@@ -187,4 +189,29 @@ def export_record(uuid):
     format = post_data.get('format')
     res = requests.get(
         f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}', headers=HEADER)
+    return res.content
+
+
+@app.route('/graphql', methods=['GET', 'POST'])
+# Only used for filtering the files in a specific node for now
+def graphql_filter():
+    post_data = request.get_json()
+    node_type = post_data.get('node_type')
+    # Condition post format should looks like
+    # 'project_id: ["demo1-jenkins", ...], tissue_type: ["Contrived", "Normal", ...], ...'
+    condition = post_data.get('condition')
+    # Field post format should looks like
+    # "submitter_id tissue_type tumor_code ..."
+    field = post_data.get('field')
+    query = {
+        "query":
+        """{""" +
+        f"""{node_type}{condition}""" +
+        """{""" +
+        f"""{field}""" +
+        """}""" +
+        """}"""
+    }
+    res = requests.post(
+        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=HEADER)
     return res.content
