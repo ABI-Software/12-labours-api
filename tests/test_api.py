@@ -13,9 +13,9 @@ def test_get_dictionary():
     res = json.loads(response.content)
     assert response.status_code == 200
     assert type(response.content) is bytes
-    assert len(res['dictionary']) == 28
-    assert res["dictionary"] == ["aliquot", "project", "acknowledgement", "diagnosis", "clinical_test", "experimental_metadata", "demographic", "submitted_copy_number", "submitted_aligned_reads", "submitted_somatic_mutation", "slide", "keyword", "slide_count",
-                                 "treatment", "read_group", "program", "core_metadata_collection", "sample", "exposure", "submitted_unaligned_reads", "experiment", "read_group_qc", "slide_image", "case", "publication", "aligned_reads_index", "family_history", "submitted_methylation"]
+    assert len(res['dictionary']) == 31
+    assert res["dictionary"] == ["root", "data_release", "aliquot", "project", "acknowledgement", "diagnosis", "clinical_test", "experimental_metadata", "demographic", "submitted_copy_number", "submitted_aligned_reads", "submitted_somatic_mutation", "slide", "keyword", "slide_count",
+                                 "treatment", "read_group", "program", "core_metadata_collection", "sample", "exposure", "submitted_unaligned_reads", "experiment", "read_group_qc", "slide_image", "case", "publication", "aligned_reads_index", "family_history", "submitted_methylation", "_all"]
 
 
 PROG_URL = f"{API_URL}/program"
@@ -31,11 +31,15 @@ def test_get_program():
 
 
 PROG_NAME = "demo1"
-PROJ_URL = f"{API_URL}/{PROG_NAME}/project"
+PROJ_URL = f"{API_URL}/projects"
 
 
 def test_get_project():
-    response = requests.get(PROJ_URL)
+    payload = {
+        "program": PROG_NAME,
+    }
+    response = requests.post(PROJ_URL, data=json.dumps(payload), headers={
+                             "Content-Type": "application/json"})
     res = json.loads(response.content)
     assert response.status_code == 200
     assert type(response.content) is bytes
