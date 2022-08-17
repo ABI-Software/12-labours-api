@@ -1,4 +1,6 @@
+from http.client import BAD_REQUEST
 import json
+from pydoc import describe
 import requests
 import gspread
 
@@ -15,11 +17,14 @@ app.config["ENV"] = Config.DEPLOY_ENV
 
 CORS(app)
 
+BAD_REQUEST = 400
+NOT_FOUND = 404
+
 SPREADSHEET_CREDENTIALS = {
     "type": SpreadSheetConfig.SHEET_TYPE,
     "project_id": SpreadSheetConfig.SHEET_PROJECT_ID,
     "private_key_id": SpreadSheetConfig.SHEET_PRIVATE_KEY_ID,
-    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY.replace('\\n', '\n'),
+    "private_key": SpreadSheetConfig.SHEET_PRIVATE_KEY.replace("\\n", "\n"),
     "client_email": SpreadSheetConfig.SHEET_CLIENT_EMAIL,
     "client_id": SpreadSheetConfig.SHEET_CLIENT_ID,
     "auth_uri": SpreadSheetConfig.SHEET_AUTH_URI,
@@ -34,8 +39,8 @@ GEN3_CREDENTIALS = {
 }
 
 TOKEN = requests.post(
-    f'{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token', json=GEN3_CREDENTIALS).json()
-HEADER = {'Authorization': 'bearer ' + TOKEN['access_token']}
+    f"{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token", json=GEN3_CREDENTIALS).json()
+HEADER = {"Authorization": "bearer " + TOKEN["access_token"]}
 
 try:
     statetable = StateTable(Config.DATABASE_URL)
@@ -70,8 +75,8 @@ def get_share_link(table):
         commit = False
     if table:
         json_data = request.get_json()
-        if json_data and 'state' in json_data:
-            state = json_data['state']
+        if json_data and "state" in json_data:
+            state = json_data["state"]
             uuid = table.pushState(state, commit)
             return jsonify({"uuid": uuid})
         abort(400, description="State not specified")
@@ -82,8 +87,8 @@ def get_share_link(table):
 def get_saved_state(table):
     if table:
         json_data = request.get_json()
-        if json_data and 'uuid' in json_data:
-            uuid = json_data['uuid']
+        if json_data and "uuid" in json_data:
+            uuid = json_data["uuid"]
             state = table.pullState(uuid)
             if state:
                 return jsonify({"state": table.pullState(uuid)})
@@ -119,89 +124,125 @@ def spreadsheet():
     return jsonify(data)
 
 
-@app.route("/program", methods=['GET', 'POST'])
+@app.route("/program", methods=["GET"])
 # Get the program information from Gen3 Data Commons
 def program():
-    res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/', headers=HEADER)
+    try:
+        res = requests.get(
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/", headers=HEADER)
 
-    json_data = json.loads(res.content)
-    program_list = []
-    for ele in json_data['links']:
-        program_list.append(ele.replace(
-            "/v0/submission/", ""))
-    new_json_data = {'program': program_list}
-    return new_json_data
+        json_data = json.loads(res.content)
+        program_list = []
+        for ele in json_data["links"]:
+            program_list.append(ele.replace(
+                "/v0/submission/", ""))
+        new_json_data = {"program": program_list}
+        return new_json_data
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
 
 
-@app.route("/<program>/project", methods=['GET'])
+@app.route("/projects", methods=["POST"])
 # Get all projects information from Gen3 Data Commons
-def project(program):
-    res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}', headers=HEADER)
+def project():
+    post_data = request.get_json()
+    program = post_data.get("program")
+    if program == None:
+        abort(BAD_REQUEST)
 
-    json_data = json.loads(res.content)
-    project_list = []
-    for ele in json_data['links']:
-        project_list.append(ele.replace(
-            f"/v0/submission/{program}/", ""))
-    new_json_data = {'project': project_list}
-    return new_json_data
+    try:
+        res = requests.get(
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}", headers=HEADER)
+
+        json_data = json.loads(res.content)
+        project_list = []
+        for ele in json_data["links"]:
+            project_list.append(ele.replace(
+                f"/v0/submission/{program}/", ""))
+        new_json_data = {"project": project_list}
+        return new_json_data
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
 
 
-@app.route("/dictionary", methods=['GET', 'POST'])
+@app.route("/dictionary", methods=["GET"])
 # Get all dictionary node from Gen3 Data Commons
 def dictionary():
-    res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/_dictionary', headers=HEADER)
+    try:
+        res = requests.get(
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/_dictionary", headers=HEADER)
 
-    json_data = json.loads(res.content)
-    dictionary_list = []
-    for ele in json_data['links'][2:30]:
-        dictionary_list.append(ele.replace(
-            "/v0/submission/_dictionary/", ""))
-        # dictionary_list.append(ele.replace(
-        #     "/v0/submission/_dictionary/", "").replace("_", " ").title())
-    new_json_data = {"dictionary": dictionary_list}
-    return new_json_data
+        json_data = json.loads(res.content)
+        dictionary_list = []
+        for ele in json_data["links"]:
+            dictionary_list.append(ele.replace(
+                "/v0/submission/_dictionary/", ""))
+        new_json_data = {"dictionary": dictionary_list}
+        return new_json_data
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
 
 
-@app.route('/nodes/<node_type>', methods=['GET', 'POST'])
+def is_json(json_data):
+    try:
+        json.loads(json_data)
+    except ValueError:
+        return False
+    return True
+
+
+@app.route("/nodes/<node_type>", methods=["POST"])
 # Exports all records in a dictionary node
 def export_node(node_type):
     post_data = request.get_json()
-    program = post_data.get('program')
-    project = post_data.get('project')
-    format = post_data.get('format')
+    program = post_data.get("program")
+    project = post_data.get("project")
+    format = post_data.get("format")
+    if program == None or project == None or format == None:
+        abort(BAD_REQUEST)
+
     res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?node_label={node_type}&format={format}', headers=HEADER)
-    return res.content
+        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?node_label={node_type}&format={format}", headers=HEADER)
+
+    if is_json(res.content) and "data" in json.loads(res.content) and json.loads(res.content)["data"] != []:
+        return res.content
+    else:
+        abort(NOT_FOUND)
 
 
-@app.route('/records/<uuid>', methods=['GET', 'POST'])
+@app.route("/records/<uuids>", methods=["POST"])
 # Exports one or more records, use comma to separate the uuids
 # e.g. uuid1,uuid2,uuid3
-def export_record(uuid):
+def export_record(uuids):
     post_data = request.get_json()
-    program = post_data.get('program')
-    project = post_data.get('project')
-    format = post_data.get('format')
-    res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}', headers=HEADER)
-    return res.content
+    program = post_data.get("program")
+    project = post_data.get("project")
+    format = post_data.get("format")
+    if program == None or project == None or format == None:
+        abort(BAD_REQUEST)
+
+    try:
+        res = requests.get(
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuids}&format={format}", headers=HEADER)
+        return res.content
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
 
 
-@app.route('/graphql', methods=['GET', 'POST'])
+@app.route("/graphql", methods=["POST"])
 # Only used for filtering the files in a specific node for now
 def graphql_filter():
     post_data = request.get_json()
-    node_type = post_data.get('node_type')
+    node_type = post_data.get("node_type")
     # Condition post format should looks like
-    # 'project_id: ["demo1-jenkins", ...], tissue_type: ["Contrived", "Normal", ...], ...'
-    condition = post_data.get('condition')
+    # '(project_id: ["demo1-jenkins", ...], tissue_type: ["Contrived", "Normal", ...], ...)'
+    condition = post_data.get("condition")
     # Field post format should looks like
     # "submitter_id tissue_type tumor_code ..."
-    field = post_data.get('field')
+    field = post_data.get("field")
+    if node_type == None or condition == None or field == None:
+        abort(BAD_REQUEST)
+
     query = {
         "query":
         """{""" +
@@ -212,21 +253,32 @@ def graphql_filter():
         """}"""
     }
     res = requests.post(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/', json=query, headers=HEADER)
-    return res.content
+        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/", json=query, headers=HEADER)
 
-
-@app.route('/<program>/<project>/<uuid>/<format>/download', methods=['GET', 'POST'])
-def download_file(program, project, uuid, format):
-    res = requests.get(
-        f'{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}', headers=HEADER)
-    if format == 'json':
-        return Response(res.content,
-                        mimetype="application/json",
-                        headers={"Content-Disposition":
-                                 f"attachment;filename={uuid}.json"})
+    json_data = json.loads(res.content)
+    if json_data["data"] == None:
+        abort(NOT_FOUND, description=json_data["errors"])
     else:
-        return Response(res.content,
-                        mimetype="text/csv",
-                        headers={"Content-Disposition":
-                                 f"attachment;filename={uuid}.csv"})
+        if json_data["data"][f"{node_type}"] == []:
+            abort(NOT_FOUND)
+        else:
+            return res.content
+
+
+@app.route("/<program>/<project>/<uuid>/<format>/download", methods=["GET"])
+def download_file(program, project, uuid, format):
+    try:
+        res = requests.get(
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}", headers=HEADER)
+        if format == "json":
+            return Response(res.content,
+                            mimetype="application/json",
+                            headers={"Content-Disposition":
+                                     f"attachment;filename={uuid}.json"})
+        else:
+            return Response(res.content,
+                            mimetype="text/csv",
+                            headers={"Content-Disposition":
+                                     f"attachment;filename={uuid}.csv"})
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
