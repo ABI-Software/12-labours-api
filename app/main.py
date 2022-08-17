@@ -1,6 +1,4 @@
-from http.client import BAD_REQUEST
 import json
-from pydoc import describe
 import requests
 import gspread
 
