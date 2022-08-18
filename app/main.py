@@ -266,8 +266,8 @@ def graphql_filter():
             return res.content
 
 
-@app.route("/download/<program>/<project>/<uuid>/<format>/<filename>", methods=["GET"])
-def download_file(program, project, uuid, format, filename):
+@app.route("/download/metadata/<program>/<project>/<uuid>/<format>/<filename>", methods=["GET"])
+def download_metadata_file(program, project, uuid, format, filename):
     try:
         res = requests.get(
             f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}", headers=HEADER)
