@@ -202,14 +202,15 @@ def export_node(node_type):
     res = requests.get(
         f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?node_label={node_type}&format={format}", headers=HEADER)
 
-    if is_json(res.content) and "data" in json.loads(res.content) and json.loads(res.content)["data"] != []:
+    json_data = json.loads(res.content)
+    if is_json(res.content) and "data" in json_data and json_data["data"] != []:
         return res.content
     else:
         abort(NOT_FOUND)
 
 
 @app.route("/records/<uuids>", methods=["POST"])
-# Exports one or more records, use comma to separate the uuids
+# Exports one or more records(records must in one node), use comma to separate the uuids
 # e.g. uuid1,uuid2,uuid3
 def export_record(uuids):
     post_data = request.get_json()
@@ -219,12 +220,14 @@ def export_record(uuids):
     if program == None or project == None or format == None:
         abort(BAD_REQUEST)
 
-    try:
-        res = requests.get(
-            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuids}&format={format}", headers=HEADER)
+    res = requests.get(
+        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuids}&format={format}", headers=HEADER)
+
+    json_data = json.loads(res.content)
+    if b"id" in res.content:
         return res.content
-    except Exception as e:
-        abort(NOT_FOUND, description=str(e))
+    else:
+        abort(NOT_FOUND, description=json_data["message"])
 
 
 @app.route("/graphql", methods=["POST"])
