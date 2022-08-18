@@ -266,8 +266,8 @@ def graphql_filter():
             return res.content
 
 
-@app.route("/<program>/<project>/<uuid>/<format>/download", methods=["GET"])
-def download_file(program, project, uuid, format):
+@app.route("/download/<program>/<project>/<uuid>/<format>/<filename>", methods=["GET"])
+def download_file(program, project, uuid, format, filename):
     try:
         res = requests.get(
             f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}", headers=HEADER)
@@ -275,11 +275,11 @@ def download_file(program, project, uuid, format):
             return Response(res.content,
                             mimetype="application/json",
                             headers={"Content-Disposition":
-                                     f"attachment;filename={uuid}.json"})
+                                     f"attachment;filename={filename}.json"})
         else:
             return Response(res.content,
                             mimetype="text/csv",
                             headers={"Content-Disposition":
-                                     f"attachment;filename={uuid}.csv"})
+                                     f"attachment;filename={filename}.csv"})
     except Exception as e:
         abort(NOT_FOUND, description=str(e))
