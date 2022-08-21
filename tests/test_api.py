@@ -134,12 +134,14 @@ def test_graphql_filter(client):
     assert response.status_code == 404
 
 
-def test_download_file(client):
+def test_download_gen3_metadata_file(client):
     PROG_NAME = "demo1"
     PROJ_NAME = "jenkins"
     UUID = "1a220420-c1dd-4959-adbb-cc8a257525b2"
     FORM = "json"
-    response = client.get(f"/{PROG_NAME}/{PROJ_NAME}/{UUID}/{FORM}/download")
+    NAME = "testname"
+    response = client.get(
+        f"/download/metadata/{PROG_NAME}/{PROJ_NAME}/{UUID}/{FORM}/{NAME}")
 
     assert response.status_code == 200
     assert b"id" in response.data
