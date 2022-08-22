@@ -2,12 +2,14 @@ import json
 import requests
 import gspread
 
+from app.config import Config, S3Config, SpreadSheetConfig, Gen3Config, S3Config, iRODSConfig
+from app.dbtable import StateTable
+
 from flask import Flask, abort, request, jsonify, Response
 from flask_cors import CORS
 from oauth2client.service_account import ServiceAccountCredentials
 
-from app.config import Config, SpreadSheetConfig, Gen3Config
-from app.dbtable import StateTable
+from irods.session import iRODSSession
 
 app = Flask(__name__)
 # set environment variable
@@ -39,6 +41,7 @@ GEN3_CREDENTIALS = {
 TOKEN = requests.post(
     f"{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token", json=GEN3_CREDENTIALS).json()
 HEADER = {"Authorization": "bearer " + TOKEN["access_token"]}
+
 
 try:
     statetable = StateTable(Config.DATABASE_URL)
@@ -120,6 +123,35 @@ def spreadsheet():
     gsheet = client.open("organ_sheets").sheet1
     data = gsheet.get_all_records()
     return jsonify(data)
+
+
+@app.route("/s3", methods=["POST"])
+def s3():
+    post_data = request.get_json()
+    suffix = post_data.get("suffix")
+    if suffix == None:
+        abort(BAD_REQUEST)
+
+    try:
+        res = requests.get(f"{S3Config.S3_ENDPOINT_URL}/{suffix}")
+
+        return res.content
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
+
+
+@app.route("/download/s3data/<suffix>", methods=["GET"])
+def download_s3data(suffix):
+    url_suffix = suffix.replace("&", "/")
+    try:
+        res = requests.get(f"{S3Config.S3_ENDPOINT_URL}/{url_suffix}")
+
+        return Response(res.content,
+                        mimetype="application/json",
+                        headers={"Content-Disposition":
+                                 f"attachment;filename={suffix}.json"})
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
 
 
 @app.route("/program", methods=["GET"])

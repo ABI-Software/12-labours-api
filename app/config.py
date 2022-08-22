@@ -30,3 +30,16 @@ class Gen3Config(object):
     GEN3_ENDPOINT_URL = os.environ.get("GEN3_ENDPOINT_URL")
     GEN3_API_KEY = os.environ.get("GEN3_API_KEY")
     GEN3_KEY_ID = os.environ.get("GEN3_KEY_ID")
+
+
+class S3Config(object):
+    S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL")
+
+
+class iRODSConfig(object):
+    IRODS_HOST = os.environ.get("IRODS_HOST")
+    IRODS_PORT = os.environ.get("IRODS_PORT")
+    IRODS_USER = os.environ.get("IRODS_USER")
+    IRODS_PASSWORD = os.environ.get("IRODS_PASSWORD")
+    IRODS_ZONE = os.environ.get("IRODS_ZONE")
+    IRODS_ENDPOINT_URL = os.environ.get("IRODS_ENDPOINT_URL")
