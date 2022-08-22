@@ -2,12 +2,14 @@ import json
 import requests
 import gspread
 
+from app.config import Config, S3Config, SpreadSheetConfig, Gen3Config, S3Config, iRODSConfig
+from app.dbtable import StateTable
+
 from flask import Flask, abort, request, jsonify, Response
 from flask_cors import CORS
 from oauth2client.service_account import ServiceAccountCredentials
 
-from app.config import Config, SpreadSheetConfig, Gen3Config
-from app.dbtable import StateTable
+from irods.session import iRODSSession
 
 app = Flask(__name__)
 # set environment variable
@@ -40,6 +42,7 @@ TOKEN = requests.post(
     f"{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token", json=GEN3_CREDENTIALS).json()
 HEADER = {"Authorization": "bearer " + TOKEN["access_token"]}
 
+
 try:
     statetable = StateTable(Config.DATABASE_URL)
 except AttributeError:
@@ -58,7 +61,7 @@ def start_up():
 
 @app.route("/")
 def flask():
-    return "This is the flask backend."
+    return "This is the 12 Labours Portal backend."
 
 
 @app.route("/health")
@@ -107,9 +110,21 @@ def get_state():
     return get_saved_state(statetable)
 
 
+def get_iRODS_Session():
+    session = iRODSSession(host=iRODSConfig.IRODS_HOST,
+                           port=iRODSConfig.IRODS_PORT,
+                           user=iRODSConfig.IRODS_USER,
+                           password=iRODSConfig.IRODS_PASSWORD,
+                           zone=iRODSConfig.IRODS_ZONE)
+    print("Connected")
+    return session
+
+
 @app.route("/spreadsheet")
-# Connect to the google spreadsheet and get all spreadsheet data.
 def spreadsheet():
+    """
+    Return the spreadsheet data.
+    """
     scope = [
         "https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"
@@ -122,9 +137,49 @@ def spreadsheet():
     return jsonify(data)
 
 
+@app.route("/s3", methods=["POST"])
+def s3():
+    """
+    Return the s3 data from s3 url location.
+    """
+    post_data = request.get_json()
+    suffix = post_data.get("suffix")
+    if suffix == None:
+        abort(BAD_REQUEST)
+
+    try:
+        res = requests.get(f"{S3Config.S3_ENDPOINT_URL}/{suffix}")
+
+        return res.content
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
+
+
+@app.route("/download/s3data/<suffix>", methods=["GET"])
+def download_s3data(suffix):
+    """
+    Return a single download file for a given suffix.
+
+    :param suffix: The suffix of s3 location.
+    :return: The file content.
+    """
+    url_suffix = suffix.replace("&", "/")
+    try:
+        res = requests.get(f"{S3Config.S3_ENDPOINT_URL}/{url_suffix}")
+
+        return Response(res.content,
+                        mimetype="application/json",
+                        headers={"Content-Disposition":
+                                 f"attachment;filename={suffix}.json"})
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
+
+
 @app.route("/program", methods=["GET"])
-# Get the program information from Gen3 Data Commons
 def program():
+    """
+    Return the program information from Gen3 Data Commons
+    """
     try:
         res = requests.get(
             f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/", headers=HEADER)
@@ -141,8 +196,10 @@ def program():
 
 
 @app.route("/projects", methods=["POST"])
-# Get all projects information from Gen3 Data Commons
 def project():
+    """
+    Return all projects information in the Gen3 program
+    """
     post_data = request.get_json()
     program = post_data.get("program")
     if program == None:
@@ -164,8 +221,10 @@ def project():
 
 
 @app.route("/dictionary", methods=["GET"])
-# Get all dictionary node from Gen3 Data Commons
 def dictionary():
+    """
+    Return all dictionary node from Gen3 Data Commons
+    """
     try:
         res = requests.get(
             f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/_dictionary", headers=HEADER)
@@ -182,6 +241,12 @@ def dictionary():
 
 
 def is_json(json_data):
+    """
+    Returns true if the given string is a valid json.
+
+    :param json_data: The input data need to be checked.
+    :return: True if the string can be parsed as valid json.
+    """
     try:
         json.loads(json_data)
     except ValueError:
@@ -190,8 +255,13 @@ def is_json(json_data):
 
 
 @app.route("/nodes/<node_type>", methods=["POST"])
-# Exports all records in a dictionary node
 def export_node(node_type):
+    """
+    Return all records in a dictionary node.
+
+    :param node_type: The dictionary node to export.
+    :return: A list of json object containing all records in the dictionary node.
+    """
     post_data = request.get_json()
     program = post_data.get("program")
     project = post_data.get("project")
@@ -210,9 +280,13 @@ def export_node(node_type):
 
 
 @app.route("/records/<uuids>", methods=["POST"])
-# Exports one or more records(records must in one node), use comma to separate the uuids
-# e.g. uuid1,uuid2,uuid3
 def export_record(uuids):
+    """
+    Return the fields of one or more records in a dictionary node.
+
+    :param uuids: uuids of the records (use comma to separate the uuids e.g. uuid1,uuid2,uuid3).
+    :return: A list of json object
+    """
     post_data = request.get_json()
     program = post_data.get("program")
     project = post_data.get("project")
@@ -233,6 +307,9 @@ def export_record(uuids):
 @app.route("/graphql", methods=["POST"])
 # Only used for filtering the files in a specific node for now
 def graphql_filter():
+    """
+    Return filtered metadata records. The query uses GraphQL query.
+    """
     post_data = request.get_json()
     node_type = post_data.get("node_type")
     # Condition post format should looks like
@@ -268,6 +345,16 @@ def graphql_filter():
 
 @app.route("/download/metadata/<program>/<project>/<uuid>/<format>/<filename>", methods=["GET"])
 def download_gen3_metadata_file(program, project, uuid, format, filename):
+    """
+    Return a single download file for a given uuid.
+
+    :param program: program name.
+    :param project: project name.
+    :param uuid: uuid of the file.
+    :param format: format of the file (must be one of the following: json, tsv).
+    :param filename: name of the file.
+    :return: A JSON or CSV file containing the metadata of the uuid.
+    """
     try:
         res = requests.get(
             f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}", headers=HEADER)
@@ -283,3 +370,14 @@ def download_gen3_metadata_file(program, project, uuid, format, filename):
                                      f"attachment;filename={filename}.csv"})
     except Exception as e:
         abort(NOT_FOUND, description=str(e))
+
+
+@app.route('/irods', methods=['GET', 'POST'])
+def get_irods_data():
+    session = get_iRODS_Session()
+    obj = session.data_objects.get(
+        f"/{iRODSConfig.IRODS_ENDPOINT_URL}/dataset/dummy.txt")
+    with obj.open('r+') as f:
+        lines = f.readlines()
+        for line in lines:
+            print(line.decode("utf-8"))
