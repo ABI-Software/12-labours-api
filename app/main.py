@@ -400,3 +400,22 @@ def get_irods_collections():
     folders = get_data_list(collect.subcollections)
     files = get_data_list(collect.data_objects)
     return {"folders": folders, "files": files}
+
+
+@app.route("/download/data/<suffix>", methods=["GET"])
+def download_irods_data_file(suffix):
+    session = get_irods_session()
+    url_suffix = suffix.replace("&", "/")
+    try:
+        file = session.data_objects.get(
+            f"{iRODSConfig.IRODS_ENDPOINT_URL}/{url_suffix}")
+        print(file.name)
+        if suffix.endswith(".txt"):
+            with file.open('r') as f:
+                content = f.read().decode("utf-8")
+                return Response(content,
+                                mimetype="text/plain",
+                                headers={"Content-Disposition":
+                                         f"attachment;filename={file.name}"})
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
