@@ -1,6 +1,7 @@
 import json
 import requests
 import gspread
+import mimetypes
 
 from app.config import Config, S3Config, SpreadSheetConfig, Gen3Config, S3Config, iRODSConfig
 from app.dbtable import StateTable
@@ -348,6 +349,7 @@ def download_gen3_metadata_file(program, project, uuid, format, filename):
     try:
         res = requests.get(
             f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}", headers=HEADER)
+
         if format == "json":
             return Response(res.content,
                             mimetype="application/json",
@@ -409,13 +411,12 @@ def download_irods_data_file(suffix):
     try:
         file = session.data_objects.get(
             f"{iRODSConfig.IRODS_ENDPOINT_URL}/{url_suffix}")
-        print(file.name)
-        if suffix.endswith(".txt"):
-            with file.open('r') as f:
-                content = f.read().decode("utf-8")
-                return Response(content,
-                                mimetype="text/plain",
-                                headers={"Content-Disposition":
-                                         f"attachment;filename={file.name}"})
+
+        with file.open('r') as f:
+            content = f.read().decode("utf-8")
+            return Response(content,
+                            mimetype=mimetypes.guess_type(file.name)[0],
+                            headers={"Content-Disposition":
+                                     f"attachment;filename={file.name}"})
     except Exception as e:
         abort(NOT_FOUND, description=str(e))
