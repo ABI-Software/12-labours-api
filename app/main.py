@@ -110,16 +110,6 @@ def get_state():
     return get_saved_state(statetable)
 
 
-def get_iRODS_Session():
-    session = iRODSSession(host=iRODSConfig.IRODS_HOST,
-                           port=iRODSConfig.IRODS_PORT,
-                           user=iRODSConfig.IRODS_USER,
-                           password=iRODSConfig.IRODS_PASSWORD,
-                           zone=iRODSConfig.IRODS_ZONE)
-    print("Connected")
-    return session
-
-
 @app.route("/spreadsheet")
 def spreadsheet():
     """
@@ -156,7 +146,7 @@ def s3():
 
 
 @app.route("/download/s3data/<suffix>", methods=["GET"])
-def download_s3data(suffix):
+def download_s3_data(suffix):
     """
     Return a single download file for a given suffix.
 
@@ -372,12 +362,41 @@ def download_gen3_metadata_file(program, project, uuid, format, filename):
         abort(NOT_FOUND, description=str(e))
 
 
-@app.route('/irods', methods=['GET', 'POST'])
-def get_irods_data():
-    session = get_iRODS_Session()
-    obj = session.data_objects.get(
-        f"/{iRODSConfig.IRODS_ENDPOINT_URL}/dataset/dummy.txt")
-    with obj.open('r+') as f:
-        lines = f.readlines()
-        for line in lines:
-            print(line.decode("utf-8"))
+def get_irods_session():
+    session = iRODSSession(host=iRODSConfig.IRODS_HOST,
+                           port=iRODSConfig.IRODS_PORT,
+                           user=iRODSConfig.IRODS_USER,
+                           password=iRODSConfig.IRODS_PASSWORD,
+                           zone=iRODSConfig.IRODS_ZONE)
+    return session
+
+
+def get_data_list(collect):
+    collect_list = []
+    for ele in collect:
+        collect_list.append({
+            "id": ele.id,
+            "name": ele.name,
+            "path": ele.path
+        })
+    return collect_list
+
+
+@app.route("/irods", methods=["GET", "POST"])
+def get_irods_collections():
+    session = get_irods_session()
+    try:
+        if request.method == "GET":
+            collect = session.collections.get(
+                f"{iRODSConfig.IRODS_ENDPOINT_URL}")
+        else:
+            post_data = request.get_json()
+            path = post_data.get("path")
+
+            collect = session.collections.get(path)
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
+
+    folders = get_data_list(collect.subcollections)
+    files = get_data_list(collect.data_objects)
+    return {"folders": folders, "files": files}
