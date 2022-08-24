@@ -2,6 +2,8 @@ import json
 import requests
 import gspread
 import mimetypes
+import pandas as pd
+import os
 
 from app.config import Config, S3Config, SpreadSheetConfig, Gen3Config, S3Config, iRODSConfig
 from app.dbtable import StateTable
@@ -33,16 +35,6 @@ SPREADSHEET_CREDENTIALS = {
     "auth_provider_x509_cert_url": SpreadSheetConfig.SHEET_AUTH_PROVIDER_X509_CERT_URL,
     "client_x509_cert_url": SpreadSheetConfig.SHEET_CLIENT_X509_CERT_URL
 }
-
-GEN3_CREDENTIALS = {
-    "api_key": Gen3Config.GEN3_API_KEY,
-    "key_id": Gen3Config.GEN3_KEY_ID
-}
-
-TOKEN = requests.post(
-    f"{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token", json=GEN3_CREDENTIALS).json()
-HEADER = {"Authorization": "bearer " + TOKEN["access_token"]}
-
 
 try:
     statetable = StateTable(Config.DATABASE_URL)
@@ -151,7 +143,7 @@ def download_s3_data(suffix):
     """
     Return a single download file for a given suffix.
 
-    :param suffix: The suffix of s3 location.
+    :param suffix: Part of the s3 location.
     :return: The file content.
     """
     url_suffix = suffix.replace("&", "/")
@@ -166,14 +158,32 @@ def download_s3_data(suffix):
         abort(NOT_FOUND, description=str(e))
 
 
+#
+# Gen3 Data Commons
+#
+
+def get_gen3_header():
+    GEN3_CREDENTIALS = {
+        "api_key": Gen3Config.GEN3_API_KEY,
+        "key_id": Gen3Config.GEN3_KEY_ID
+    }
+    try:
+        TOKEN = requests.post(
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/user/credentials/cdis/access_token", json=GEN3_CREDENTIALS).json()
+        return {"Authorization": "bearer " + TOKEN["access_token"]}
+    except Exception as e:
+        abort(NOT_FOUND, description=str(e))
+
+
 @app.route("/program", methods=["GET"])
 def program():
     """
     Return the program information from Gen3 Data Commons
     """
+    header = get_gen3_header()
     try:
         res = requests.get(
-            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/", headers=HEADER)
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/", headers=header)
 
         json_data = json.loads(res.content)
         program_list = []
@@ -191,6 +201,7 @@ def project():
     """
     Return all projects information in the Gen3 program
     """
+    header = get_gen3_header()
     post_data = request.get_json()
     program = post_data.get("program")
     if program == None:
@@ -198,7 +209,7 @@ def project():
 
     try:
         res = requests.get(
-            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}", headers=HEADER)
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}", headers=header)
 
         json_data = json.loads(res.content)
         project_list = []
@@ -216,9 +227,10 @@ def dictionary():
     """
     Return all dictionary node from Gen3 Data Commons
     """
+    header = get_gen3_header()
     try:
         res = requests.get(
-            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/_dictionary", headers=HEADER)
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/_dictionary", headers=header)
 
         json_data = json.loads(res.content)
         dictionary_list = []
@@ -253,6 +265,7 @@ def export_node(node_type):
     :param node_type: The dictionary node to export.
     :return: A list of json object containing all records in the dictionary node.
     """
+    header = get_gen3_header()
     post_data = request.get_json()
     program = post_data.get("program")
     project = post_data.get("project")
@@ -261,7 +274,7 @@ def export_node(node_type):
         abort(BAD_REQUEST)
 
     res = requests.get(
-        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?node_label={node_type}&format={format}", headers=HEADER)
+        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?node_label={node_type}&format={format}", headers=header)
 
     json_data = json.loads(res.content)
     if is_json(res.content) and "data" in json_data and json_data["data"] != []:
@@ -278,6 +291,7 @@ def export_record(uuids):
     :param uuids: uuids of the records (use comma to separate the uuids e.g. uuid1,uuid2,uuid3).
     :return: A list of json object
     """
+    header = get_gen3_header()
     post_data = request.get_json()
     program = post_data.get("program")
     project = post_data.get("project")
@@ -286,7 +300,7 @@ def export_record(uuids):
         abort(BAD_REQUEST)
 
     res = requests.get(
-        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuids}&format={format}", headers=HEADER)
+        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuids}&format={format}", headers=header)
 
     json_data = json.loads(res.content)
     if b"id" in res.content:
@@ -301,6 +315,7 @@ def graphql_filter():
     """
     Return filtered metadata records. The query uses GraphQL query.
     """
+    header = get_gen3_header()
     post_data = request.get_json()
     node_type = post_data.get("node_type")
     # Condition post format should looks like
@@ -322,7 +337,7 @@ def graphql_filter():
         """}"""
     }
     res = requests.post(
-        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/", json=query, headers=HEADER)
+        f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/graphql/", json=query, headers=header)
 
     json_data = json.loads(res.content)
     if json_data["data"] == None:
@@ -337,18 +352,19 @@ def graphql_filter():
 @app.route("/download/metadata/<program>/<project>/<uuid>/<format>/<filename>", methods=["GET"])
 def download_gen3_metadata_file(program, project, uuid, format, filename):
     """
-    Return a single download file for a given uuid.
+    Return a single file for a given uuid.
 
     :param program: program name.
     :param project: project name.
     :param uuid: uuid of the file.
     :param format: format of the file (must be one of the following: json, tsv).
     :param filename: name of the file.
-    :return: A JSON or CSV file containing the metadata of the uuid.
+    :return: A JSON or CSV file containing the metadata.
     """
+    header = get_gen3_header()
     try:
         res = requests.get(
-            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}", headers=HEADER)
+            f"{Gen3Config.GEN3_ENDPOINT_URL}/api/v0/submission/{program}/{project}/export/?ids={uuid}&format={format}", headers=header)
 
         if format == "json":
             return Response(res.content,
@@ -363,8 +379,15 @@ def download_gen3_metadata_file(program, project, uuid, format, filename):
     except Exception as e:
         abort(NOT_FOUND, description=str(e))
 
+#
+# iRODS
+#
+
 
 def get_irods_session():
+    """
+    This function is used to connect to the iRODS server, it requires "host", "port", "user", "password" and "zone" environment variables.
+    """
     session = iRODSSession(host=iRODSConfig.IRODS_HOST,
                            port=iRODSConfig.IRODS_PORT,
                            user=iRODSConfig.IRODS_USER,
@@ -386,6 +409,12 @@ def get_data_list(collect):
 
 @app.route("/irods", methods=["GET", "POST"])
 def get_irods_collections():
+    """
+    Return collections from a folder.
+
+    "GET" method will return all collections from the root folder
+    "POST" method will return all collections from the required folder
+    """
     session = get_irods_session()
     try:
         if request.method == "GET":
@@ -406,17 +435,34 @@ def get_irods_collections():
 
 @app.route("/download/data/<suffix>", methods=["GET"])
 def download_irods_data_file(suffix):
+    """
+    Return a specific download file from iRODS.
+
+    :param suffix: Required iRODS file path.
+    :return: A file with data.
+    """
     session = get_irods_session()
     url_suffix = suffix.replace("&", "/")
     try:
         file = session.data_objects.get(
             f"{iRODSConfig.IRODS_ENDPOINT_URL}/{url_suffix}")
 
-        with file.open('r') as f:
-            content = f.read().decode("utf-8")
+        with file.open("r") as f:
+            if suffix.endswith(".xlsx"):
+                download_path = os.path.join(
+                    os.path.expanduser('~'), "Downloads")
+                pd.read_excel(f).to_excel(f"{download_path}/{file.name}")
+                # content = pd.read_excel(f).to_csv()
+                return "Successfully download!"
+            else:
+                if suffix.endswith(".csv"):
+                    content = pd.read_csv(f).to_csv()
+                else:
+                    content = f.read()
             return Response(content,
                             mimetype=mimetypes.guess_type(file.name)[0],
                             headers={"Content-Disposition":
                                      f"attachment;filename={file.name}"})
+
     except Exception as e:
         abort(NOT_FOUND, description=str(e))
