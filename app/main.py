@@ -176,7 +176,7 @@ def get_gen3_header():
 
 
 @app.route("/program", methods=["GET"])
-def program():
+def get_gen3_program():
     """
     Return the program information from Gen3 Data Commons
     """
@@ -196,10 +196,10 @@ def program():
         abort(NOT_FOUND, description=str(e))
 
 
-@app.route("/projects", methods=["POST"])
-def project():
+@app.route("/project", methods=["POST"])
+def get_gen3_project():
     """
-    Return all projects information in the Gen3 program
+    Return project information in the Gen3 program
     """
     header = get_gen3_header()
     post_data = request.get_json()
@@ -223,7 +223,7 @@ def project():
 
 
 @app.route("/dictionary", methods=["GET"])
-def dictionary():
+def get_gen3_dictionary():
     """
     Return all dictionary node from Gen3 Data Commons
     """
@@ -258,7 +258,7 @@ def is_json(json_data):
 
 
 @app.route("/nodes/<node_type>", methods=["POST"])
-def export_node(node_type):
+def get_gen3_node_records(node_type):
     """
     Return all records in a dictionary node.
 
@@ -284,7 +284,7 @@ def export_node(node_type):
 
 
 @app.route("/records/<uuids>", methods=["POST"])
-def export_record(uuids):
+def get_gen3_record(uuids):
     """
     Return the fields of one or more records in a dictionary node.
 
@@ -423,6 +423,8 @@ def get_irods_collections():
         else:
             post_data = request.get_json()
             path = post_data.get("path")
+            if path == None:
+                abort(BAD_REQUEST)
 
             collect = session.collections.get(path)
     except Exception as e:
@@ -463,6 +465,5 @@ def download_irods_data_file(suffix):
                             mimetype=mimetypes.guess_type(file.name)[0],
                             headers={"Content-Disposition":
                                      f"attachment;filename={file.name}"})
-
     except Exception as e:
         abort(NOT_FOUND, description=str(e))
