@@ -1,0 +1,557 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>app.main &#8212; 12 Labours Portal  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../../_static/alabaster.css" />
+    <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+    <script src="../../_static/jquery.js"></script>
+    <script src="../../_static/underscore.js"></script>
+    <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+    <script src="../../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+   
+  <link rel="stylesheet" href="../../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for app.main</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">requests</span>
+<span class="kn">import</span> <span class="nn">gspread</span>
+<span class="kn">import</span> <span class="nn">mimetypes</span>
+
+<span class="kn">from</span> <span class="nn">app.config</span> <span class="kn">import</span> <span class="n">Config</span><span class="p">,</span> <span class="n">S3Config</span><span class="p">,</span> <span class="n">SpreadSheetConfig</span><span class="p">,</span> <span class="n">Gen3Config</span><span class="p">,</span> <span class="n">S3Config</span><span class="p">,</span> <span class="n">iRODSConfig</span>
+<span class="kn">from</span> <span class="nn">app.dbtable</span> <span class="kn">import</span> <span class="n">StateTable</span>
+
+<span class="kn">from</span> <span class="nn">flask</span> <span class="kn">import</span> <span class="n">Flask</span><span class="p">,</span> <span class="n">abort</span><span class="p">,</span> <span class="n">request</span><span class="p">,</span> <span class="n">jsonify</span><span class="p">,</span> <span class="n">Response</span>
+<span class="kn">from</span> <span class="nn">flask_cors</span> <span class="kn">import</span> <span class="n">CORS</span>
+<span class="kn">from</span> <span class="nn">oauth2client.service_account</span> <span class="kn">import</span> <span class="n">ServiceAccountCredentials</span>
+
+<span class="kn">from</span> <span class="nn">irods.session</span> <span class="kn">import</span> <span class="n">iRODSSession</span>
+
+<span class="n">app</span> <span class="o">=</span> <span class="n">Flask</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+<span class="c1"># set environment variable</span>
+<span class="n">app</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;ENV&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">Config</span><span class="o">.</span><span class="n">DEPLOY_ENV</span>
+
+<span class="n">CORS</span><span class="p">(</span><span class="n">app</span><span class="p">)</span>
+
+<span class="n">BAD_REQUEST</span> <span class="o">=</span> <span class="mi">400</span>
+<span class="n">NOT_FOUND</span> <span class="o">=</span> <span class="mi">404</span>
+
+<span class="n">SPREADSHEET_CREDENTIALS</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_TYPE</span><span class="p">,</span>
+    <span class="s2">&quot;project_id&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_PROJECT_ID</span><span class="p">,</span>
+    <span class="s2">&quot;private_key_id&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_PRIVATE_KEY_ID</span><span class="p">,</span>
+    <span class="s2">&quot;private_key&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_PRIVATE_KEY</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\\</span><span class="s2">n&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">),</span>
+    <span class="s2">&quot;client_email&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_CLIENT_EMAIL</span><span class="p">,</span>
+    <span class="s2">&quot;client_id&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_CLIENT_ID</span><span class="p">,</span>
+    <span class="s2">&quot;auth_uri&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_AUTH_URI</span><span class="p">,</span>
+    <span class="s2">&quot;token_uri&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_TOKEN_URI</span><span class="p">,</span>
+    <span class="s2">&quot;auth_provider_x509_cert_url&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_AUTH_PROVIDER_X509_CERT_URL</span><span class="p">,</span>
+    <span class="s2">&quot;client_x509_cert_url&quot;</span><span class="p">:</span> <span class="n">SpreadSheetConfig</span><span class="o">.</span><span class="n">SHEET_CLIENT_X509_CERT_URL</span>
+<span class="p">}</span>
+
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">statetable</span> <span class="o">=</span> <span class="n">StateTable</span><span class="p">(</span><span class="n">Config</span><span class="o">.</span><span class="n">DATABASE_URL</span><span class="p">)</span>
+<span class="k">except</span> <span class="ne">AttributeError</span><span class="p">:</span>
+    <span class="n">statetable</span> <span class="o">=</span> <span class="kc">None</span>
+
+
+<div class="viewcode-block" id="resource_not_found"><a class="viewcode-back" href="../../rst/app.html#app.main.resource_not_found">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">errorhandler</span><span class="p">(</span><span class="mi">404</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">resource_not_found</span><span class="p">(</span><span class="n">e</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">jsonify</span><span class="p">(</span><span class="n">error</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)),</span> <span class="mi">404</span></div>
+
+
+<div class="viewcode-block" id="start_up"><a class="viewcode-back" href="../../rst/app.html#app.main.start_up">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">before_first_request</span>
+<span class="k">def</span> <span class="nf">start_up</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Initiate&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="flask"><a class="viewcode-back" href="../../rst/app.html#app.main.flask">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">flask</span><span class="p">():</span>
+    <span class="k">return</span> <span class="s2">&quot;This is the 12 Labours Portal backend.&quot;</span></div>
+
+
+<div class="viewcode-block" id="health"><a class="viewcode-back" href="../../rst/app.html#app.main.health">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/health&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">health</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">({</span><span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;healthy&quot;</span><span class="p">})</span></div>
+
+
+<span class="k">def</span> <span class="nf">get_share_link</span><span class="p">(</span><span class="n">table</span><span class="p">):</span>
+    <span class="c1"># Do not commit to database when testing</span>
+    <span class="n">commit</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">app</span><span class="o">.</span><span class="n">config</span><span class="p">[</span><span class="s2">&quot;TESTING&quot;</span><span class="p">]:</span>
+        <span class="n">commit</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">if</span> <span class="n">table</span><span class="p">:</span>
+        <span class="n">json_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">json_data</span> <span class="ow">and</span> <span class="s2">&quot;state&quot;</span> <span class="ow">in</span> <span class="n">json_data</span><span class="p">:</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;state&quot;</span><span class="p">]</span>
+            <span class="n">uuid</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">pushState</span><span class="p">(</span><span class="n">state</span><span class="p">,</span> <span class="n">commit</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">jsonify</span><span class="p">({</span><span class="s2">&quot;uuid&quot;</span><span class="p">:</span> <span class="n">uuid</span><span class="p">})</span>
+        <span class="n">abort</span><span class="p">(</span><span class="mi">400</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;State not specified&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="mi">404</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Database not available&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="get_saved_state"><a class="viewcode-back" href="../../rst/app.html#app.main.get_saved_state">[docs]</a><span class="k">def</span> <span class="nf">get_saved_state</span><span class="p">(</span><span class="n">table</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">table</span><span class="p">:</span>
+        <span class="n">json_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+        <span class="k">if</span> <span class="n">json_data</span> <span class="ow">and</span> <span class="s2">&quot;uuid&quot;</span> <span class="ow">in</span> <span class="n">json_data</span><span class="p">:</span>
+            <span class="n">uuid</span> <span class="o">=</span> <span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;uuid&quot;</span><span class="p">]</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="n">table</span><span class="o">.</span><span class="n">pullState</span><span class="p">(</span><span class="n">uuid</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">state</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">jsonify</span><span class="p">({</span><span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="n">table</span><span class="o">.</span><span class="n">pullState</span><span class="p">(</span><span class="n">uuid</span><span class="p">)})</span>
+        <span class="n">abort</span><span class="p">(</span><span class="mi">400</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Key missing or did not find a match&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="mi">404</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="s2">&quot;Database not available&quot;</span><span class="p">)</span></div>
+
+
+<span class="c1"># An example</span>
+<div class="viewcode-block" id="get_share_link"><a class="viewcode-back" href="../../rst/app.html#app.main.get_share_link">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/state/getshareid&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">get_share_link</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">get_share_link</span><span class="p">(</span><span class="n">statetable</span><span class="p">)</span></div>
+
+
+<span class="c1"># Get the map state using the share link id.</span>
+<div class="viewcode-block" id="get_state"><a class="viewcode-back" href="../../rst/app.html#app.main.get_state">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/state/getstate&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">get_state</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">get_saved_state</span><span class="p">(</span><span class="n">statetable</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="spreadsheet"><a class="viewcode-back" href="../../rst/app.html#app.main.spreadsheet">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/spreadsheet&quot;</span><span class="p">)</span>
+<span class="k">def</span> <span class="nf">spreadsheet</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return the spreadsheet data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">scope</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="s2">&quot;https://spreadsheets.google.com/feeds&quot;</span><span class="p">,</span> <span class="s2">&quot;https://www.googleapis.com/auth/spreadsheets&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;https://www.googleapis.com/auth/drive.file&quot;</span><span class="p">,</span> <span class="s2">&quot;https://www.googleapis.com/auth/drive&quot;</span>
+    <span class="p">]</span>
+    <span class="n">credential</span> <span class="o">=</span> <span class="n">ServiceAccountCredentials</span><span class="o">.</span><span class="n">from_json_keyfile_dict</span><span class="p">(</span>
+        <span class="n">SPREADSHEET_CREDENTIALS</span><span class="p">,</span> <span class="n">scope</span><span class="p">)</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">gspread</span><span class="o">.</span><span class="n">authorize</span><span class="p">(</span><span class="n">credential</span><span class="p">)</span>
+    <span class="n">gsheet</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">&quot;organ_sheets&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">sheet1</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">gsheet</span><span class="o">.</span><span class="n">get_all_records</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">jsonify</span><span class="p">(</span><span class="n">data</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="s3"><a class="viewcode-back" href="../../rst/app.html#app.main.s3">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/s3&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">s3</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return the s3 data from s3 url location.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">post_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+    <span class="n">suffix</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;suffix&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">suffix</span> <span class="o">==</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">BAD_REQUEST</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">S3Config</span><span class="o">.</span><span class="n">S3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">res</span><span class="o">.</span><span class="n">content</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="download_s3_data"><a class="viewcode-back" href="../../rst/app.html#app.main.download_s3_data">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/download/s3data/&lt;suffix&gt;&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;GET&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">download_s3_data</span><span class="p">(</span><span class="n">suffix</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return a single download file for a given suffix.</span>
+
+<span class="sd">    :param suffix: Part of the s3 location.</span>
+<span class="sd">    :return: The file content.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">url_suffix</span> <span class="o">=</span> <span class="n">suffix</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;&amp;&quot;</span><span class="p">,</span> <span class="s2">&quot;/&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">S3Config</span><span class="o">.</span><span class="n">S3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">url_suffix</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">,</span>
+                        <span class="n">mimetype</span><span class="o">=</span><span class="s2">&quot;application/json&quot;</span><span class="p">,</span>
+                        <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Content-Disposition&quot;</span><span class="p">:</span>
+                                 <span class="sa">f</span><span class="s2">&quot;attachment;filename=</span><span class="si">{</span><span class="n">suffix</span><span class="si">}</span><span class="s2">.json&quot;</span><span class="p">})</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span></div>
+
+
+<span class="c1">#</span>
+<span class="c1"># Gen3 Data Commons</span>
+<span class="c1">#</span>
+
+<div class="viewcode-block" id="get_gen3_header"><a class="viewcode-back" href="../../rst/app.html#app.main.get_gen3_header">[docs]</a><span class="k">def</span> <span class="nf">get_gen3_header</span><span class="p">():</span>
+    <span class="n">GEN3_CREDENTIALS</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;api_key&quot;</span><span class="p">:</span> <span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_API_KEY</span><span class="p">,</span>
+        <span class="s2">&quot;key_id&quot;</span><span class="p">:</span> <span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_KEY_ID</span>
+    <span class="p">}</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">TOKEN</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/user/credentials/cdis/access_token&quot;</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">GEN3_CREDENTIALS</span><span class="p">)</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;Authorization&quot;</span><span class="p">:</span> <span class="s2">&quot;bearer &quot;</span> <span class="o">+</span> <span class="n">TOKEN</span><span class="p">[</span><span class="s2">&quot;access_token&quot;</span><span class="p">]}</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="program"><a class="viewcode-back" href="../../rst/app.html#app.main.program">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/program&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;GET&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">program</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return the program information from Gen3 Data Commons</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="n">get_gen3_header</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/api/v0/submission/&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">header</span><span class="p">)</span>
+
+        <span class="n">json_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">program_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">ele</span> <span class="ow">in</span> <span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;links&quot;</span><span class="p">]:</span>
+            <span class="n">program_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ele</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+                <span class="s2">&quot;/v0/submission/&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+        <span class="n">new_json_data</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;program&quot;</span><span class="p">:</span> <span class="n">program_list</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">new_json_data</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="project"><a class="viewcode-back" href="../../rst/app.html#app.main.project">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/projects&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">project</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return all projects information in the Gen3 program</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="n">get_gen3_header</span><span class="p">()</span>
+    <span class="n">post_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+    <span class="n">program</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;program&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">program</span> <span class="o">==</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">BAD_REQUEST</span><span class="p">)</span>
+
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/api/v0/submission/</span><span class="si">{</span><span class="n">program</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">header</span><span class="p">)</span>
+
+        <span class="n">json_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">project_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">ele</span> <span class="ow">in</span> <span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;links&quot;</span><span class="p">]:</span>
+            <span class="n">project_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ele</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;/v0/submission/</span><span class="si">{</span><span class="n">program</span><span class="si">}</span><span class="s2">/&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+        <span class="n">new_json_data</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;project&quot;</span><span class="p">:</span> <span class="n">project_list</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">new_json_data</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="dictionary"><a class="viewcode-back" href="../../rst/app.html#app.main.dictionary">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/dictionary&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;GET&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">dictionary</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return all dictionary node from Gen3 Data Commons</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="n">get_gen3_header</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/api/v0/submission/_dictionary&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">header</span><span class="p">)</span>
+
+        <span class="n">json_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+        <span class="n">dictionary_list</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">ele</span> <span class="ow">in</span> <span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;links&quot;</span><span class="p">]:</span>
+            <span class="n">dictionary_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">ele</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span>
+                <span class="s2">&quot;/v0/submission/_dictionary/&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+        <span class="n">new_json_data</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;dictionary&quot;</span><span class="p">:</span> <span class="n">dictionary_list</span><span class="p">}</span>
+        <span class="k">return</span> <span class="n">new_json_data</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span></div>
+
+
+<div class="viewcode-block" id="is_json"><a class="viewcode-back" href="../../rst/app.html#app.main.is_json">[docs]</a><span class="k">def</span> <span class="nf">is_json</span><span class="p">(</span><span class="n">json_data</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Returns true if the given string is a valid json.</span>
+
+<span class="sd">    :param json_data: The input data need to be checked.</span>
+<span class="sd">    :return: True if the string can be parsed as valid json.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">json_data</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    <span class="k">return</span> <span class="kc">True</span></div>
+
+
+<div class="viewcode-block" id="export_node"><a class="viewcode-back" href="../../rst/app.html#app.main.export_node">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/nodes/&lt;node_type&gt;&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">export_node</span><span class="p">(</span><span class="n">node_type</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return all records in a dictionary node.</span>
+
+<span class="sd">    :param node_type: The dictionary node to export.</span>
+<span class="sd">    :return: A list of json object containing all records in the dictionary node.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="n">get_gen3_header</span><span class="p">()</span>
+    <span class="n">post_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+    <span class="n">program</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;program&quot;</span><span class="p">)</span>
+    <span class="n">project</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;project&quot;</span><span class="p">)</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;format&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">program</span> <span class="o">==</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">project</span> <span class="o">==</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">format</span> <span class="o">==</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">BAD_REQUEST</span><span class="p">)</span>
+
+    <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/api/v0/submission/</span><span class="si">{</span><span class="n">program</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">project</span><span class="si">}</span><span class="s2">/export/?node_label=</span><span class="si">{</span><span class="n">node_type</span><span class="si">}</span><span class="s2">&amp;format=</span><span class="si">{</span><span class="nb">format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">header</span><span class="p">)</span>
+
+    <span class="n">json_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">is_json</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">)</span> <span class="ow">and</span> <span class="s2">&quot;data&quot;</span> <span class="ow">in</span> <span class="n">json_data</span> <span class="ow">and</span> <span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span> <span class="o">!=</span> <span class="p">[]:</span>
+        <span class="k">return</span> <span class="n">res</span><span class="o">.</span><span class="n">content</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="export_record"><a class="viewcode-back" href="../../rst/app.html#app.main.export_record">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/records/&lt;uuids&gt;&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">export_record</span><span class="p">(</span><span class="n">uuids</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return the fields of one or more records in a dictionary node.</span>
+
+<span class="sd">    :param uuids: uuids of the records (use comma to separate the uuids e.g. uuid1,uuid2,uuid3).</span>
+<span class="sd">    :return: A list of json object</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="n">get_gen3_header</span><span class="p">()</span>
+    <span class="n">post_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+    <span class="n">program</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;program&quot;</span><span class="p">)</span>
+    <span class="n">project</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;project&quot;</span><span class="p">)</span>
+    <span class="nb">format</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;format&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">program</span> <span class="o">==</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">project</span> <span class="o">==</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">format</span> <span class="o">==</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">BAD_REQUEST</span><span class="p">)</span>
+
+    <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/api/v0/submission/</span><span class="si">{</span><span class="n">program</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">project</span><span class="si">}</span><span class="s2">/export/?ids=</span><span class="si">{</span><span class="n">uuids</span><span class="si">}</span><span class="s2">&amp;format=</span><span class="si">{</span><span class="nb">format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">header</span><span class="p">)</span>
+
+    <span class="n">json_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+    <span class="k">if</span> <span class="sa">b</span><span class="s2">&quot;id&quot;</span> <span class="ow">in</span> <span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">res</span><span class="o">.</span><span class="n">content</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;message&quot;</span><span class="p">])</span></div>
+
+
+<div class="viewcode-block" id="graphql_filter"><a class="viewcode-back" href="../../rst/app.html#app.main.graphql_filter">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/graphql&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+<span class="c1"># Only used for filtering the files in a specific node for now</span>
+<span class="k">def</span> <span class="nf">graphql_filter</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return filtered metadata records. The query uses GraphQL query.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="n">get_gen3_header</span><span class="p">()</span>
+    <span class="n">post_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+    <span class="n">node_type</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;node_type&quot;</span><span class="p">)</span>
+    <span class="c1"># Condition post format should looks like</span>
+    <span class="c1"># &#39;(project_id: [&quot;demo1-jenkins&quot;, ...], tissue_type: [&quot;Contrived&quot;, &quot;Normal&quot;, ...], ...)&#39;</span>
+    <span class="n">condition</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;condition&quot;</span><span class="p">)</span>
+    <span class="c1"># Field post format should looks like</span>
+    <span class="c1"># &quot;submitter_id tissue_type tumor_code ...&quot;</span>
+    <span class="n">field</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;field&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">node_type</span> <span class="o">==</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">condition</span> <span class="o">==</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">field</span> <span class="o">==</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">BAD_REQUEST</span><span class="p">)</span>
+
+    <span class="n">query</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;query&quot;</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;{&quot;&quot;&quot;</span> <span class="o">+</span>
+        <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="si">{</span><span class="n">node_type</span><span class="si">}{</span><span class="n">condition</span><span class="si">}</span><span class="s2">&quot;&quot;&quot;</span> <span class="o">+</span>
+        <span class="sd">&quot;&quot;&quot;{&quot;&quot;&quot;</span> <span class="o">+</span>
+        <span class="sa">f</span><span class="s2">&quot;&quot;&quot;</span><span class="si">{</span><span class="n">field</span><span class="si">}</span><span class="s2">&quot;&quot;&quot;</span> <span class="o">+</span>
+        <span class="sd">&quot;&quot;&quot;}&quot;&quot;&quot;</span> <span class="o">+</span>
+        <span class="sd">&quot;&quot;&quot;}&quot;&quot;&quot;</span>
+    <span class="p">}</span>
+    <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/api/v0/submission/graphql/&quot;</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">query</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">header</span><span class="p">)</span>
+
+    <span class="n">json_data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;errors&quot;</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">json_data</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">][</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">node_type</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="p">[]:</span>
+            <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">res</span><span class="o">.</span><span class="n">content</span></div>
+
+
+<div class="viewcode-block" id="download_gen3_metadata_file"><a class="viewcode-back" href="../../rst/app.html#app.main.download_gen3_metadata_file">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/download/metadata/&lt;program&gt;/&lt;project&gt;/&lt;uuid&gt;/&lt;format&gt;/&lt;filename&gt;&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;GET&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">download_gen3_metadata_file</span><span class="p">(</span><span class="n">program</span><span class="p">,</span> <span class="n">project</span><span class="p">,</span> <span class="n">uuid</span><span class="p">,</span> <span class="nb">format</span><span class="p">,</span> <span class="n">filename</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return a single file for a given uuid.</span>
+
+<span class="sd">    :param program: program name.</span>
+<span class="sd">    :param project: project name.</span>
+<span class="sd">    :param uuid: uuid of the file.</span>
+<span class="sd">    :param format: format of the file (must be one of the following: json, tsv).</span>
+<span class="sd">    :param filename: name of the file.</span>
+<span class="sd">    :return: A JSON or CSV file containing the metadata.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">header</span> <span class="o">=</span> <span class="n">get_gen3_header</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">Gen3Config</span><span class="o">.</span><span class="n">GEN3_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/api/v0/submission/</span><span class="si">{</span><span class="n">program</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">project</span><span class="si">}</span><span class="s2">/export/?ids=</span><span class="si">{</span><span class="n">uuid</span><span class="si">}</span><span class="s2">&amp;format=</span><span class="si">{</span><span class="nb">format</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">headers</span><span class="o">=</span><span class="n">header</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nb">format</span> <span class="o">==</span> <span class="s2">&quot;json&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">,</span>
+                            <span class="n">mimetype</span><span class="o">=</span><span class="s2">&quot;application/json&quot;</span><span class="p">,</span>
+                            <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Content-Disposition&quot;</span><span class="p">:</span>
+                                     <span class="sa">f</span><span class="s2">&quot;attachment;filename=</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.json&quot;</span><span class="p">})</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">res</span><span class="o">.</span><span class="n">content</span><span class="p">,</span>
+                            <span class="n">mimetype</span><span class="o">=</span><span class="s2">&quot;text/csv&quot;</span><span class="p">,</span>
+                            <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Content-Disposition&quot;</span><span class="p">:</span>
+                                     <span class="sa">f</span><span class="s2">&quot;attachment;filename=</span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">.csv&quot;</span><span class="p">})</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span></div>
+
+<span class="c1">#</span>
+<span class="c1"># iRODS</span>
+<span class="c1">#</span>
+
+
+<div class="viewcode-block" id="get_irods_session"><a class="viewcode-back" href="../../rst/app.html#app.main.get_irods_session">[docs]</a><span class="k">def</span> <span class="nf">get_irods_session</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    This function is used to connect to the iRODS server, it requires &quot;host&quot;, &quot;port&quot;, &quot;user&quot;, &quot;password&quot; and &quot;zone&quot; environment variables.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">session</span> <span class="o">=</span> <span class="n">iRODSSession</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="n">iRODSConfig</span><span class="o">.</span><span class="n">IRODS_HOST</span><span class="p">,</span>
+                           <span class="n">port</span><span class="o">=</span><span class="n">iRODSConfig</span><span class="o">.</span><span class="n">IRODS_PORT</span><span class="p">,</span>
+                           <span class="n">user</span><span class="o">=</span><span class="n">iRODSConfig</span><span class="o">.</span><span class="n">IRODS_USER</span><span class="p">,</span>
+                           <span class="n">password</span><span class="o">=</span><span class="n">iRODSConfig</span><span class="o">.</span><span class="n">IRODS_PASSWORD</span><span class="p">,</span>
+                           <span class="n">zone</span><span class="o">=</span><span class="n">iRODSConfig</span><span class="o">.</span><span class="n">IRODS_ZONE</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">session</span></div>
+
+
+<div class="viewcode-block" id="get_data_list"><a class="viewcode-back" href="../../rst/app.html#app.main.get_data_list">[docs]</a><span class="k">def</span> <span class="nf">get_data_list</span><span class="p">(</span><span class="n">collect</span><span class="p">):</span>
+    <span class="n">collect_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">ele</span> <span class="ow">in</span> <span class="n">collect</span><span class="p">:</span>
+        <span class="n">collect_list</span><span class="o">.</span><span class="n">append</span><span class="p">({</span>
+            <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="n">ele</span><span class="o">.</span><span class="n">id</span><span class="p">,</span>
+            <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="n">ele</span><span class="o">.</span><span class="n">name</span><span class="p">,</span>
+            <span class="s2">&quot;path&quot;</span><span class="p">:</span> <span class="n">ele</span><span class="o">.</span><span class="n">path</span>
+        <span class="p">})</span>
+    <span class="k">return</span> <span class="n">collect_list</span></div>
+
+
+<div class="viewcode-block" id="get_irods_collections"><a class="viewcode-back" href="../../rst/app.html#app.main.get_irods_collections">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/irods&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;GET&quot;</span><span class="p">,</span> <span class="s2">&quot;POST&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">get_irods_collections</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return collections from a folder.</span>
+
+<span class="sd">    &quot;GET&quot; method will return all collections from the root folder</span>
+<span class="sd">    &quot;POST&quot; method will return all collections from the required folder</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">session</span> <span class="o">=</span> <span class="n">get_irods_session</span><span class="p">()</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">request</span><span class="o">.</span><span class="n">method</span> <span class="o">==</span> <span class="s2">&quot;GET&quot;</span><span class="p">:</span>
+            <span class="n">collect</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">collections</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">iRODSConfig</span><span class="o">.</span><span class="n">IRODS_ENDPOINT_URL</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">post_data</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">get_json</span><span class="p">()</span>
+            <span class="n">path</span> <span class="o">=</span> <span class="n">post_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;path&quot;</span><span class="p">)</span>
+
+            <span class="n">collect</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">collections</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span>
+
+    <span class="n">folders</span> <span class="o">=</span> <span class="n">get_data_list</span><span class="p">(</span><span class="n">collect</span><span class="o">.</span><span class="n">subcollections</span><span class="p">)</span>
+    <span class="n">files</span> <span class="o">=</span> <span class="n">get_data_list</span><span class="p">(</span><span class="n">collect</span><span class="o">.</span><span class="n">data_objects</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;folders&quot;</span><span class="p">:</span> <span class="n">folders</span><span class="p">,</span> <span class="s2">&quot;files&quot;</span><span class="p">:</span> <span class="n">files</span><span class="p">}</span></div>
+
+
+<div class="viewcode-block" id="download_irods_data_file"><a class="viewcode-back" href="../../rst/app.html#app.main.download_irods_data_file">[docs]</a><span class="nd">@app</span><span class="o">.</span><span class="n">route</span><span class="p">(</span><span class="s2">&quot;/download/data/&lt;suffix&gt;&quot;</span><span class="p">,</span> <span class="n">methods</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;GET&quot;</span><span class="p">])</span>
+<span class="k">def</span> <span class="nf">download_irods_data_file</span><span class="p">(</span><span class="n">suffix</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Return a specific download file from iRODS.</span>
+
+<span class="sd">    :param suffix: Required iRODS file path.</span>
+<span class="sd">    :return: A file with data.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">session</span> <span class="o">=</span> <span class="n">get_irods_session</span><span class="p">()</span>
+    <span class="n">url_suffix</span> <span class="o">=</span> <span class="n">suffix</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;&amp;&quot;</span><span class="p">,</span> <span class="s2">&quot;/&quot;</span><span class="p">)</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">file</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">data_objects</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">iRODSConfig</span><span class="o">.</span><span class="n">IRODS_ENDPOINT_URL</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">url_suffix</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="n">file</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="s2">&quot;utf-8&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="n">Response</span><span class="p">(</span><span class="n">content</span><span class="p">,</span>
+                            <span class="n">mimetype</span><span class="o">=</span><span class="n">mimetypes</span><span class="o">.</span><span class="n">guess_type</span><span class="p">(</span><span class="n">file</span><span class="o">.</span><span class="n">name</span><span class="p">)[</span><span class="mi">0</span><span class="p">],</span>
+                            <span class="n">headers</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Content-Disposition&quot;</span><span class="p">:</span>
+                                     <span class="sa">f</span><span class="s2">&quot;attachment;filename=</span><span class="si">{</span><span class="n">file</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">})</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">abort</span><span class="p">(</span><span class="n">NOT_FOUND</span><span class="p">,</span> <span class="n">description</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">))</span></div>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../../index.html">12 Labours Portal</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../rst/modules.html">12-labours-api</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../../index.html">Documentation overview</a><ul>
+  <li><a href="../index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2022, 12LaboursDevTeam.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 5.1.1</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
